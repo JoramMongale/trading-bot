@@ -173,3 +173,41 @@ def test_invalid_strategy_variant_raises_naming_key(tmp_path, bad):
                  encoding="utf-8")
     with pytest.raises(ValueError, match="strategy.variant"):
         load_config(p)
+
+
+def test_strategy_direction_defaults_to_long(tmp_path):
+    """A config without strategy.direction loads the "long" default — legacy
+    configs (including every committed one) stay byte-identical."""
+    p = _write_config(tmp_path)
+    assert load_config(p).strategy.direction == "long"
+
+
+def test_strategy_direction_readable_when_both(tmp_path):
+    p = _write_config(tmp_path)
+    body = p.read_text(encoding="utf-8")
+    p.write_text(body.replace("sl_buffer = 0.01\n",
+                              "sl_buffer = 0.01\ndirection = \"both\"\n"),
+                 encoding="utf-8")
+    assert load_config(p).strategy.direction == "both"
+
+
+@pytest.mark.parametrize("bad", ["short", "sideways", ""])
+def test_invalid_strategy_direction_raises_naming_key(tmp_path, bad):
+    """"short"-only live mode is deliberately unsupported — the locked live
+    config is the union ("both"), and anything else must fail loudly."""
+    p = _write_config(tmp_path)
+    body = p.read_text(encoding="utf-8")
+    p.write_text(body.replace("sl_buffer = 0.01\n",
+                              f"sl_buffer = 0.01\ndirection = \"{bad}\"\n"),
+                 encoding="utf-8")
+    with pytest.raises(ValueError, match="strategy.direction"):
+        load_config(p)
+
+
+def test_live_cent_config_still_loads():
+    """Regression guard for the Task 4 edit: config-cent.toml must load at
+    every step of this build (rr_multiple 2.0 today, direction="both" after
+    Task 4 — both are valid values)."""
+    cfg = load_config("config/config-cent.toml")
+    assert cfg.strategy.direction in ("long", "both")
+    assert cfg.live.magic_number == 77020

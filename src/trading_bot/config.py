@@ -36,6 +36,13 @@ class StrategyConfig:
     # "candle_reversal" is a TEST strategy (two-candle reversal, entry at the
     # candle wick top) available to measure and compare in the backtester only.
     variant: str = "breakout"
+    # Which SIDE(s) the LIVE engine trades. "long" (default) is the only value
+    # every existing config uses and must stay byte-identical; "both" runs the
+    # long and short swing S/R breakouts through the same single slot. A
+    # "short"-only live mode is deliberately NOT supported — the backtester
+    # can measure it, but the live need is "both", and the locked config is
+    # the union.
+    direction: str = "long"
 
 
 @dataclass(frozen=True)
@@ -421,6 +428,12 @@ def _validate(cfg: Config) -> None:
         raise ValueError(
             f"strategy.variant={cfg.strategy.variant!r} is invalid: must be "
             "'breakout' or 'candle_reversal'"
+        )
+    if cfg.strategy.direction not in ("long", "both"):
+        raise ValueError(
+            f"strategy.direction={cfg.strategy.direction!r} is invalid: must be "
+            "'long' (default) or 'both' ('short'-only live is unsupported; "
+            "'both' trades both sides through the single slot)"
         )
     if not isinstance(cfg.data.spec_file, str):
         raise ValueError("data.spec_file must be a string path or empty")
