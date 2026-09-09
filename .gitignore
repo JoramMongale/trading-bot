@@ -23,3 +23,7 @@ output/
 dist/
 dbt/target/
 dbt/logs/
+
+# Stray runtime output
+web/web_start.out
+*.pid
