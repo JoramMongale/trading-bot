@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: JPY-Cross Breakout Investigation
 status: executing
-stopped_at: Phase 5 complete — 4/4 plans, 534-test suite green (2026-09-08)
-last_updated: "2026-09-08T14:11:30.416Z"
-last_activity: 2026-09-08 -- Phase 5 execution complete (Instrument-Correct Backtest Machinery)
+stopped_at: Phase 5 complete — 4/4 plans, 534-test suite green (2026-09-08); quick task 260909-scalper (2026-09-09)
+last_updated: "2026-09-09T00:00:00.000Z"
+last_activity: 2026-09-09 -- Completed quick task 260909-scalper (both-direction scalper measured, clears no bar)
 progress:
   total_phases: 3
   completed_phases: 1
@@ -16,7 +16,7 @@ progress:
 
 # Project State: Gold 5m Breakout Bot
 
-**Updated:** 2026-09-07
+**Updated:** 2026-09-09
 
 ## Project Reference
 
@@ -40,7 +40,7 @@ See: .planning/PROJECT.md (updated 2026-09-07 after v1.1 definition)
 Phase: 05
 Plan: 4/4 complete
 Status: Phase 5 complete — milestone v1.1 in progress (Phases 6-7 pending)
-Last activity: 2026-09-08 -- Phase 5 execution complete
+Last activity: 2026-09-09 -- Completed quick task 260909-scalper (both-direction scalper measured, clears no bar)
 
 ## Deferred Items
 
@@ -169,6 +169,7 @@ Items acknowledged and deferred at milestone v1.0 close on 2026-09-07 (full deta
 | 260828-orb | Liquidity-sweep / session ORB investigation (research) | 2026-08-28 | complete — FALSIFIED. Hypothesis: price sweeping the Asian-range (00:00–06:00) High/Low during London/NY open is a structural edge (breakout-continuation OR failed-sweep reversal). Built pure module (session_range/detect_sweeps, 8 tests), session driver (entry at NEXT open — clean 100% bar coverage, no slot starvation), ran full falsification: full-sample best t=1.66 (below noise bar); train/test FAILS (gold failed rr1.0 train R+0.259/t+2.87 → test R−0.231/t−1.69); random-time control FAILS (random window r7s9 R+0.139/t+2.23 BEATS real London window R+0.107/t+1.39 — session timing carries no alpha); monthly shows 2025-only front-loading (flat/negative from 2026-04). Same 2025 artifact as every prior candidate. Retained as backtest-only test strategy. See `.planning/quick/20260828-liquidity-sweep-or/SUMMARY.md`. |
 | 260828-vol | Volatility compression/expansion investigation (research) | 2026-08-28 | complete — FALSIFIED. Hypothesis: entering when volatility first expands out of a Bollinger-bandwidth squeeze captures the start of the move. Pure module (bollinger width, detect_squeezes, 7 tests), driver (next-open entry, 100% coverage). Full-sample best t=−0.76 (nothing positive). Ablation control is the killer: SQUEEZED gold R−0.023/t−0.76 vs PLAIN band-breakout (no squeeze) R+0.042/t+1.96 — the squeeze filter actively SUBTRACTS value on gold; BTC identical either way (t≈0.1). Train/test fails (gold +0.011→−0.106; BTC mirrors −0.043→+0.115 — regime luck). Monthly: no stable edge (gold 2026-05 t=−3.35 against). 4th consecutive candidate falsified. See `.planning/quick/20260828-volatility-compression/SUMMARY.md`. |
 | 260828-htf | HTF-aligned M5 pullback investigation (research, gold account target) | 2026-08-28 | complete — FALSIFIED FOR LIVE (5th candidate). Hypothesis: M5 pullbacks to EMA20 gated by H4 EMA50 trend. Pure module (htf_bias shift-by-1 no-lookahead, detect_pullbacks, 5 tests), driver + battery. GOLD (XAUUSDc, the live account instrument): HTF-gated rr1.0 R+0.013/t+1.04, 100% coverage. Controls: HTF ablation (gated +1.04 vs unfiltered −0.65 — the EMA gate genuinely helps) AND random-bias control (EMA +1.04 vs random seeds −1.05/−1.33/−0.13 — EMA beats coin flips) — the FIRST mechanism in the battery to beat its random control, i.e. NOT lagging bias. BUT the edge is economically negligible: fails OOS (train +1.45 → test −0.24), no stable monthly edge, far below the noise bar. Distinction: fails because the signal is real-but-negligible, not because it's noise/front-loaded. Nothing wired live. See `.planning/quick/20260828-htf-pullback/SUMMARY.md`. |
+| 260909-scalper | Both-direction single-slot M5 gold scalper (backtest measurement) | 2026-09-09 | complete — MEASURED, CLEARS NO BAR (backtest only, nothing live/demo touched). Engine gained `direction="both"` single-slot support (`run_backtest`, additive, default byte-identical, 540-test suite green) + grid driver + falsification battery. On real broker-native XAUUSDc M5 (100k bars): long rr1.0 R+0.0925/t+2.11, short rr1.0 R+0.0009/t+0.02, both rr1.0 R+0.0810/t+1.94 (short leg ~flat +0.0228R — mild dilution, no collapse). 8 scalp configs (tight TP rr<1.0, tp_from_fill, hold 12/36): best full-sample t=2.47 (both rr1.0 hold36) but OOS t=+0.46 (FAIL), ALL four pre-registered exits fail OOS t>2.0; best-of-8 noise P=10.3% (median 1.73), N=39 self-check 2.37 ✓; NOT front-loaded for once (2026 half stronger). Note: engine `tp_from_fill` is rr-agnostic so the two tpffill rows measured one config (search effectively N=7). See `.planning/quick/20260909-gold-both-scalper/SUMMARY.md`. |
 
 ## Blockers/Concerns
 
