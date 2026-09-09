@@ -31,30 +31,40 @@ class AccountInfo:
 class OrderRequest:
     """One entry the strategy wants taken, in strategy vocabulary.
 
-    ``entry`` is the REFERENCE level the strategy signalled on (the broken
-    resistance), NOT a price the order is placed at. The setup fires on a close
-    ABOVE resistance, so by the time this request exists the market is already
-    past ``entry`` — a Buy Stop there sits below market and every broker
+    ``entry`` is the REFERENCE level the strategy signalled on — the broken
+    resistance for a long, the broken SUPPORT for a short — NOT a price the
+    order is placed at. The setup fires on a close THROUGH the level, so by
+    the time this request exists the market is already past ``entry`` — a stop
+    order there sits below (buy) or above (sell) market and every broker
     rejects it (retcode 10015). The backtest never actually traded that level
-    either: it armed the level and filled at ``max(entry, open)`` on the next
-    bar, which is the bar's open in 339 of 340 recorded trades. Live execution
-    is therefore a MARKET buy, and ``entry`` survives only so the fill can be
-    logged against the level that triggered it.
+    either: it armed the level and filled at ``max(entry, open)`` (min for a
+    short) on the next bar. Live execution is therefore a MARKET order, and
+    ``entry`` survives only so the fill can be logged against the level that
+    triggered it.
+
+    ``sl``/``tp`` keep the strategy geometry on both sides: a long has
+    ``sl < entry < tp``; a short has ``sl > entry > tp`` (stop above the
+    reference support, target below it).
     """
 
     symbol: str
     volume: float
-    entry: float  # reference level (resistance) — see class docstring
+    entry: float  # reference level (resistance for long / support for short)
     sl: float
     tp: float
     magic: int
     deviation: int
     comment: str
+    side: str = "long"  # "long" (default) | "short"
 
     @property
     def risk_per_unit(self) -> float:
-        """Distance from the reference entry down to the stop, in quote units."""
-        return self.entry - self.sl
+        """Distance from the reference entry to the stop, in quote units.
+
+        Positive for both sides: a long stops BELOW the entry and a short
+        stops ABOVE it, so the distance is ``abs(entry - sl)``.
+        """
+        return abs(self.entry - self.sl)
 
     def to_log_fields(self) -> dict[str, object]:
         """SAFE-02 structured-log fields for this order request."""
@@ -65,6 +75,7 @@ class OrderRequest:
             "sl": self.sl,
             "tp": self.tp,
             "magic": self.magic,
+            "side": self.side,
         }
 
 
@@ -242,6 +253,11 @@ class BrokerClient(ABC):
     @abstractmethod
     def place_market_buy(self, request: OrderRequest) -> OrderResult:
         """Buy at market with SL/TP attached; raise BrokerRejectedError on a
+        failure retcode."""
+
+    @abstractmethod
+    def place_market_sell(self, request: OrderRequest) -> OrderResult:
+        """Sell at market with SL/TP attached; raise BrokerRejectedError on a
         failure retcode."""
 
     @abstractmethod

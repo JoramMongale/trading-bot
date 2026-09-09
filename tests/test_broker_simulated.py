@@ -144,7 +144,7 @@ def test_equivalent_to_matches_on_symbol_magic_entry_tolerance():
 
 
 def test_to_log_fields_contains_safe02_keys():
-    assert set(_request().to_log_fields()) == {"symbol", "volume", "entry", "sl", "tp", "magic"}
+    assert set(_request().to_log_fields()) == {"symbol", "volume", "entry", "sl", "tp", "magic", "side"}
 
 
 def test_broker_client_abstract_simulated_concrete():

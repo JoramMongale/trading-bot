@@ -152,7 +152,7 @@ def _resolve_volume(si, volume: float) -> float:
     return volume
 
 
-def _check_stop_distance(ask: float, sl: float, tp: float, min_dist: float) -> None:
+def _check_stop_distance(ask: float, sl: float, tp: float, min_dist: float, *, sell: bool = False) -> None:
     """Refuse SL/TP the broker will bounce for sitting too close to market.
 
     ``trade_stops_level`` is the minimum distance (in points) a stop may sit
@@ -160,8 +160,26 @@ def _check_stop_distance(ask: float, sl: float, tp: float, min_dist: float) -> N
     Widening the levels to comply would silently change the trade the risk gate
     approved — a wider SL is a bigger loss than the one that was signed off —
     so this refuses instead, and the setup is skipped.
+
+    ``sell=True`` mirrors the checks about the BID (the price a short crosses):
+    the stop must sit FURTHER ABOVE the market and the target FURTHER BELOW
+    it. The default ``sell=False`` keeps the two buy-side comparisons exactly
+    as written.
     """
     if min_dist <= 0:
+        return
+    if sell:
+        # Short geometry: sl is above market (resistance + buffer), tp below.
+        if sl - ask < min_dist:
+            raise BrokerRejectedError(
+                f"stop loss {sl} is {sl - ask:.5f} from bid {ask}, inside the broker's "
+                f"minimum stop distance of {min_dist:.5f}"
+            )
+        if ask - tp < min_dist:
+            raise BrokerRejectedError(
+                f"take profit {tp} is {ask - tp:.5f} from bid {ask}, inside the broker's "
+                f"minimum stop distance of {min_dist:.5f}"
+            )
         return
     if ask - sl < min_dist:
         raise BrokerRejectedError(
@@ -520,6 +538,105 @@ class MT5Broker(BrokerClient):
         if result.retcode in {mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED}:
             # ``price`` on the result is the executed price, which is not
             # necessarily the ask we asked for — that difference is the
+            # slippage the engine logs against the backtest's assumed entry.
+            return OrderResult(
+                ticket=result.order,
+                placed=True,
+                retcode=result.retcode,
+                comment=result.comment,
+                fill_price=float(getattr(result, "price", 0.0) or 0.0),
+            )
+        raise BrokerRejectedError(
+            f"order_send retcode {result.retcode} ({mt5.last_error()[1]}): {result.comment}"
+        )
+
+    def place_market_sell(self, request: OrderRequest) -> OrderResult:
+        """Sell at market with SL and TP attached, in one ``order_send``.
+
+        The exact mirror of :meth:`place_market_buy`: a MARKET entry (not a
+        Sell Stop at ``request.entry`` — a short setup fires on a close BELOW
+        support, so that level is already above the market and a stop order
+        there is rejected with 10015 every time). A sell crosses the BID, so
+        the bid is read fresh and the request is the buy shape byte-for-byte
+        EXCEPT ``"type": mt5.ORDER_TYPE_SELL`` and the bid as ``"price"``.
+
+        Same validation before sending — prices rounded to digits, volume
+        snapped down onto the lot grid, non-finite prices refused, SL/TP
+        checked outside ``trade_stops_level`` about the bid (``sell=True``) —
+        and the same 10030 filling-mode fallback and DONE/PLACED handling.
+        """
+        mt5 = self._mt5()
+        si = mt5.symbol_info(request.symbol)
+        if si is None:
+            code, msg = mt5.last_error()
+            raise BrokerUnavailableError(
+                f"symbol_info({request.symbol}) returned None: {code} {msg}"
+            )
+
+        # The bid is the price a SELL crosses, and it must be read fresh: the
+        # signal bar has already closed by the time this runs.
+        tick = mt5.symbol_info_tick(request.symbol)
+        bid = float(getattr(tick, "bid", 0.0) or 0.0) if tick is not None else 0.0
+        if bid <= 0:
+            code, msg = mt5.last_error()
+            raise BrokerRejectedError(
+                f"no live bid for {request.symbol} (market closed?): {code} {msg}"
+            )
+
+        digits = int(getattr(si, "digits", 2) or 2)
+        point = float(getattr(si, "point", 0.0) or 0.0)
+        stops_points = int(getattr(si, "trade_stops_level", 0) or 0)
+
+        # Full-precision arithmetic upstream produces prices like 2621.4599999,
+        # which a 2-digit symbol rejects as an invalid price (10015).
+        price = round(bid, digits)
+        sl = round(request.sl, digits)
+        tp = round(request.tp, digits)
+
+        volume = _resolve_volume(si, request.volume)
+        # Last line of defence. A NaN that reached here would be sent as a
+        # missing stop loss — an unprotected position — so the adapter refuses
+        # rather than trusting callers to have checked.
+        if not all(math.isfinite(v) for v in (price, sl, tp)):
+            raise BrokerRejectedError(
+                f"refusing to send non-finite prices (price={price} sl={sl} tp={tp}); "
+                "a NaN stop loss would open an unprotected position"
+            )
+        _check_stop_distance(price, sl, tp, stops_points * point, sell=True)
+
+        req = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": request.symbol,
+            "volume": volume,
+            "type": mt5.ORDER_TYPE_SELL,
+            "price": price,  # bid; deviation absorbs the move before it lands
+            "sl": sl,  # resistance + sl_buffer
+            "tp": tp,  # entry - (sl - entry), 1:1 R:R off the reference level
+            "deviation": request.deviation,
+            "magic": request.magic,
+            "comment": request.comment,
+            "type_time": mt5.ORDER_TIME_GTC,
+        }
+        invalid_fill = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
+        candidates = _filling_candidates(mt5, si)
+        result = None
+        for i, filling in enumerate(candidates):
+            req["type_filling"] = filling
+            result = mt5.order_send(req)
+            if result is None:
+                code, msg = mt5.last_error()
+                raise BrokerRejectedError(f"order_send returned None: {code} {msg}")
+            if result.retcode != invalid_fill:
+                break
+            if self._logger is not None and i + 1 < len(candidates):
+                self._logger.warning(
+                    "type_filling=%s rejected (10030); retrying with %s",
+                    filling,
+                    candidates[i + 1],
+                )
+        if result.retcode in {mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED}:
+            # ``price`` on the result is the executed price, which is not
+            # necessarily the bid we asked for — that difference is the
             # slippage the engine logs against the backtest's assumed entry.
             return OrderResult(
                 ticket=result.order,

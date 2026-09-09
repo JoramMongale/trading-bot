@@ -77,3 +77,17 @@ class DryRunBroker(BrokerClient):
         return OrderResult(
             ticket=0, placed=False, retcode=0, comment="dry-run: no order sent"
         )
+
+    def place_market_sell(self, request: OrderRequest) -> OrderResult:
+        """NEVER sends (sell mirror of :meth:`place_market_buy`).
+
+        Structurally identical no-send: logs the would-be short as an
+        ``order_plan`` decision (SAFE-02, carrying ``side=short`` via
+        ``to_log_fields``) and returns a no-op result. Zero references to
+        ``self._inner`` — a dry-run short can never leak a real sell.
+        """
+        logger = self._logger or logging.getLogger("dry_run")
+        log_decision(logger, "order_plan", **request.to_log_fields(), mode="dry-run")
+        return OrderResult(
+            ticket=0, placed=False, retcode=0, comment="dry-run: no order sent"
+        )

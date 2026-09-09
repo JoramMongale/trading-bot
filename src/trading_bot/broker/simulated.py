@@ -136,6 +136,36 @@ class SimulatedBroker(BrokerClient):
             fill_price=self.quote(request.symbol).ask,
         )
 
+    def place_market_sell(self, request: OrderRequest) -> OrderResult:
+        """Fill instantly at the BID and open a position (sell mirror).
+
+        A short crosses the bid, so the fill is quoted off the bid — the
+        engine's short risk is measured the same way. Same ledger/position
+        behaviour as :meth:`place_market_buy`, and the ledger entry records
+        the side via ``to_log_fields`` so the decision trail shows which side
+        filled.
+        """
+        ticket = len(self._orders) + 1000
+        self._orders.append(
+            {
+                **request.to_log_fields(),
+                "deviation": request.deviation,
+                "comment": request.comment,
+                "ticket": ticket,
+                "pending": False,
+            }
+        )
+        self._positions.append(
+            Position(ticket=ticket, symbol=request.symbol, magic=request.magic)
+        )
+        return OrderResult(
+            ticket=ticket,
+            placed=True,
+            retcode=10009,
+            comment="simulated",
+            fill_price=self.quote(request.symbol).bid,
+        )
+
     def pending_orders(self, symbol: str, magic: int) -> list[PendingOrder]:
         return [
             PendingOrder(
