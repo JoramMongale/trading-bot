@@ -33,6 +33,11 @@ from trading_bot.strategy.signals import detect_setups
 from trading_bot.strategy.swings import detect_swings
 
 
+def side_sgn(side: str) -> float:
+    """+1 for a long trade, -1 for a short one (mirror generality)."""
+    return 1.0 if side == "long" else -1.0
+
+
 def run_backtest(
     df,
     fractal_left: int = 2,
@@ -62,14 +67,20 @@ def run_backtest(
         entry_idx, exit_idx, direction
     ``exit_reason`` is ``"SL"``, ``"TP"``, ``"TIME"`` or ``"OPEN"``.
 
-    ``direction`` selects the long breakout (default, unchanged behaviour) or
-    its strict short mirror. The loop below is sign-generalized rather than
-    duplicated: ``sgn`` is +1 for longs and -1 for shorts, and every price
-    comparison is written as ``sgn * price >= sgn * level`` so one body of code
-    expresses both. Duplicating the loop would let the two sides drift apart,
-    and the whole value of the short side is that it is EXACTLY the mirror --
-    it measures whether the setup's negative edge is symmetric, which only
-    means something if nothing else differs.
+    ``direction`` selects the long breakout (default, unchanged behaviour), its
+    strict short mirror, or ``"both"``. The loop below is sign-generalized
+    rather than duplicated: ``sgn`` is +1 for longs and -1 for shorts, and
+    every price comparison is written as ``sgn * price >= sgn * level`` so one
+    body of code expresses every side. In a ``"both"`` run the union of the two
+    setups competes for the SAME single-slot loop -- a bar can fire at most one
+    side, so the union is unambiguous -- and the first signal to fire claims
+    the slot until its trade closes. ``"both"`` is rejected for the
+    direction-scoped options (candle_reversal variant, require_body, htf_sma,
+    setup_override) because each describes one side only. Duplicating the loop
+    would let the two sides drift apart, and the whole value of the short side
+    is that it is EXACTLY the mirror -- it measures whether the setup's
+    negative edge is symmetric, which only means something if nothing else
+    differs.
 
     ``rr_multiple`` sets the target distance as a multiple of the stop
     distance: ``tp = entry + rr_multiple * (entry - sl)``. The default of 1.0
@@ -87,9 +98,12 @@ def run_backtest(
     stake, all in one direction on correlated instruments, so a single sharp
     reversal takes every stop together. Measure drawdown, not just R per trade.
 
-    ``direction="both"`` is deliberately absent. Two directions competing for a
-    single position slot is a different system with its own selection bias, and
-    no evidence yet justifies building it.
+    ``direction="both"`` single-slot competition IS implemented (added
+    2026-09-09 for BACKTEST measurement of a both-direction scalp variant,
+    quick task 20260909-gold-both-scalper); it is deliberately NOT used by the
+    live engine, which stays long-only breakout. Two directions competing for
+    one slot is a system with its own selection bias -- that is exactly what
+    the measurement exists to expose.
 
     ``setup_veto`` is the AI-layer seam (plan 03-01). Called as
     ``setup_veto(bar, entry, sl, tp)`` exactly when a setup is otherwise about
@@ -112,8 +126,9 @@ def run_backtest(
     same engine measures whether an apparent edge is predictive alpha or just
     the engine's fill/slot mechanics. Default None = unchanged behaviour.
     """
-    if direction not in ("long", "short"):
-        raise ValueError(f"direction={direction!r} must be 'long' or 'short'")
+    if direction not in ("long", "short", "both"):
+        raise ValueError(
+            f"direction={direction!r} must be 'long', 'short' or 'both'")
     if max_concurrent < 1:
         raise ValueError(f"max_concurrent={max_concurrent} must be >= 1")
     if variant not in ("breakout", "candle_reversal"):
@@ -126,7 +141,29 @@ def run_backtest(
         raise ValueError(
             f"variant='candle_reversal' supports direction='long' only, got "
             f"{direction!r}")
-    sgn = 1.0 if direction == "long" else -1.0
+    if direction == "both":
+        # The body and HTF filters are direction-scoped (they take a single
+        # direction), and a bare boolean setup_override carries no side, so a
+        # "both" run with any of them would gate or trigger incoherently.
+        # session_hours, max_hold_bars, tp_from_fill, rr_multiple,
+        # atr_median_bars and max_concurrent stay legal with "both" -- all are
+        # direction-agnostic.
+        if variant != "breakout":
+            raise ValueError(
+                f"direction='both' is only defined for variant='breakout', "
+                f"got variant={variant!r}")
+        if require_body:
+            raise ValueError(
+                "direction='both' cannot be combined with require_body=True: "
+                "the body filter is direction-scoped and takes one direction")
+        if htf_sma is not None:
+            raise ValueError(
+                "direction='both' cannot be combined with htf_sma: the HTF "
+                "filter is direction-scoped and takes one direction")
+        if setup_override is not None:
+            raise ValueError(
+                "direction='both' cannot be combined with setup_override: a "
+                "bare boolean override carries no side")
 
     df = df.copy()  # pandas 3.0 Copy-on-Write: never mutate the caller's frame
     if variant == "candle_reversal":
@@ -135,7 +172,20 @@ def run_backtest(
         df = detect_candle_reversal(df)
     else:
         df = support_resistance(detect_swings(df, fractal_left, fractal_right), sr_lookback)
-        df = detect_setups(df, direction=direction)
+        if direction == "both":
+            # Union of the two strict mirrors over the SAME level frame. A bar
+            # cannot fire both sides (a close cannot sit above resistance AND
+            # below support while both levels are finite), so setup_dir is
+            # unambiguous wherever setup is True. detect_setups copies, so df
+            # keeps its levels for the loop below.
+            long_sig = detect_setups(df, direction="long")["setup"]
+            short_sig = detect_setups(df, direction="short")["setup"]
+            df["setup"] = long_sig | short_sig
+            df["setup_dir"] = ""
+            df.loc[long_sig, "setup_dir"] = "long"
+            df.loc[short_sig, "setup_dir"] = "short"
+        else:
+            df = detect_setups(df, direction=direction)
 
     # Research falsification seam: a caller-supplied setup column (e.g. random
     # coin flips) replaces the signal BEFORE any filter, so the engine runs
@@ -180,7 +230,7 @@ def run_backtest(
         if on_event is not None:
             on_event({"event": event, **fields})
 
-    def levels_at(bar) -> tuple[float, float]:
+    def levels_at(bar, side: str) -> tuple[float, float]:
         """(reference entry, stop) for this bar, in trade terms.
 
         A long breaks out ABOVE resistance and stops below support; a short
@@ -193,7 +243,7 @@ def run_backtest(
         """
         if variant == "candle_reversal":
             return candle_levels(bar)
-        if sgn > 0:
+        if side == "long":
             return float(bar.resistance), float(bar.support - sl_buffer)
         return float(bar.support), float(bar.resistance + sl_buffer)
 
@@ -219,14 +269,6 @@ def run_backtest(
     for t in range(len(df)):
         bar = df.iloc[t]  # pandas 3.0: read-only copy, never mutate
 
-        # The two bar extremes, named by what they mean FOR THIS TRADE rather
-        # than by up/down. For a long the adverse extreme is the low and the
-        # favourable one is the high; for a short they swap. Every comparison
-        # below is then written once, in the form `sgn * price >= sgn * level`,
-        # which reads identically for both directions.
-        adverse = float(bar.low if sgn > 0 else bar.high)
-        favourable = float(bar.high if sgn > 0 else bar.low)
-
         # Slot accounting is taken at the START of the bar, before anything
         # closes or fills. That is what makes max_concurrent=1 reproduce the
         # original single-slot loop EXACTLY: there, a bar holding an open trade
@@ -237,7 +279,14 @@ def run_backtest(
         # 1) Manage open trades first. Same-bar ordering: SL before TP, and
         #    both before the time stop -- a bar that touches a level resolves at
         #    that level, not at its close, however long the trade has run.
+        #    Each trade's own side sets its extremes: for a long the adverse
+        #    extreme is the low and the favourable one is the high; for a short
+        #    they swap. Every comparison is written once, in the form
+        #    `sgn * price >= sgn * level`, which reads identically for both.
         for trade in list(open_trades):
+            sgn = side_sgn(trade["direction"])
+            adverse = float(bar.low if sgn > 0 else bar.high)
+            favourable = float(bar.high if sgn > 0 else bar.low)
             if sgn * adverse <= sgn * trade["sl"]:
                 close_trade(trade, t, trade["sl"], "SL")
                 open_trades.remove(trade)
@@ -255,9 +304,13 @@ def run_backtest(
                 open_trades.remove(trade)
 
         # 2) Fill armed orders (armed on the signal bar, fills t+1 onwards).
+        #    Each pending carries its own side, so mixed books fill correctly.
         for order in list(pendings):
             if order["armed_idx"] == t:
                 continue  # never fill on the bar that armed it
+            sgn = side_sgn(order["side"])
+            adverse = float(bar.low if sgn > 0 else bar.high)
+            favourable = float(bar.high if sgn > 0 else bar.low)
             if sgn * favourable >= sgn * order["entry"]:
                 # Gap-open fills at the open, which is the worse price in
                 # both directions: above the buy level, or below the sell one.
@@ -276,7 +329,7 @@ def run_backtest(
                 trade = {
                     "entry_time": bar.name,
                     "entry_idx": t,
-                    "direction": direction,
+                    "direction": order["side"],
                     "entry": fill,
                     "sl": order["sl"],
                     "tp": tp_here,
@@ -295,8 +348,10 @@ def run_backtest(
         # value scales the target further away and is configurable via
         # [strategy] rr_multiple.
         if bool(bar.setup):
-            entry, sl = levels_at(bar)
+            side = direction if direction != "both" else str(df["setup_dir"].iloc[t])
+            entry, sl = levels_at(bar, side)
             tp = entry + rr_multiple * (entry - sl)
+            sgn = side_sgn(side)
             if slots_used_at_open >= max_concurrent:
                 # Reasons kept distinct because they mean different things: a
                 # position is exposed to the market, an unfilled order is not.
@@ -325,7 +380,7 @@ def run_backtest(
                          entry=entry, sl=sl, tp=tp)
                     continue
                 pendings.append({"entry": entry, "sl": sl, "tp": tp,
-                                 "armed_idx": t})
+                                 "armed_idx": t, "side": side})
                 emit("setup_detected", bar=bar.name, entry=entry, sl=sl, tp=tp)
 
     # Close any trades still open at end of data at the last close (flagged).

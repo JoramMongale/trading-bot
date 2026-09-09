@@ -117,7 +117,7 @@ def test_short_stop_sits_above_entry():
 def test_direction_must_be_long_or_short():
     df = _random_walk(n=300)
     with pytest.raises(ValueError, match="direction"):
-        run_backtest(df, direction="both")
+        run_backtest(df, direction="sideways")
     with pytest.raises(ValueError, match="direction"):
         detect_setups(df.assign(resistance=1.0, support=0.0), direction="sideways")
 
