@@ -48,7 +48,7 @@ def _round2(value: float) -> float:
     return round(value, 2)
 
 
-def levels_are_tradable(entry: float, sl: float, tp: float) -> bool:
+def levels_are_tradable(entry: float, sl: float, tp: float, side: str = "long") -> bool:
     """True when the three prices describe a trade that can actually be exited.
 
     ``support``/``resistance`` are NaN until a confirmed swing of that type
@@ -65,12 +65,16 @@ def levels_are_tradable(entry: float, sl: float, tp: float) -> bool:
     only ~69 bars and starts fresh on every restart, and 6 of 45 sampled
     mid-history windows produced such a setup.
 
-    A non-positive stop distance is rejected on the same grounds: it makes
-    ``tp <= entry``, so the trade has no target and no risk to size against.
+    A non-positive stop distance or inverted levels fails on both sides: a long
+    needs the stop BELOW the reference entry (``entry > sl``, today's rule); a
+    short needs the stop ABOVE the reference support and the target BELOW it
+    (``sl > entry > tp``).
     """
     if not all(math.isfinite(v) for v in (entry, sl, tp)):
         return False
-    return entry > sl
+    if side == "long":
+        return entry > sl
+    return sl > entry and entry > tp
 
 
 def in_session(hours: list[int], bar_time) -> bool:
@@ -244,7 +248,7 @@ class LiveEngine:
             + 5
         )
 
-    def _ai_gate(self, entry: float, sl: float, tp: float, bar_time) -> dict | None:
+    def _ai_gate(self, entry: float, sl: float, tp: float, bar_time, side: str = "long") -> dict | None:
         """AI-layer seam (plan 03-01). Default: no AI, proceed unchanged.
 
         Called from :meth:`on_setup` after the dedup/slot guards and before the
@@ -292,7 +296,24 @@ class LiveEngine:
         df = df.copy()  # CoW-friendly; never mutate the broker's frame
         df = detect_swings(df, cfg.strategy.fractal_left, cfg.strategy.fractal_right)
         df = support_resistance(df, cfg.strategy.sr_lookback)
-        df = detect_setups(df)
+
+        # Which SIDE(s) to trade comes from [strategy] direction. "both" is
+        # the exact Pass-A union from backtest/engine.py: one levels frame,
+        # the union of the two strict mirrors, and a setup_dir column naming
+        # the side each bar fired. The default single-direction path stays
+        # byte-identical to the pre-existing call (detect_setups defaults to
+        # "long") and does NOT add a setup_dir column — the AI-context frame
+        # is unchanged for every legacy config.
+        direction = cfg.strategy.direction
+        if direction == "both":
+            long_sig = detect_setups(df, direction="long")["setup"]
+            short_sig = detect_setups(df, direction="short")["setup"]
+            df["setup"] = long_sig | short_sig
+            df["setup_dir"] = ""
+            df.loc[long_sig, "setup_dir"] = "long"
+            df.loc[short_sig, "setup_dir"] = "short"  # short wins any overlap
+        else:
+            df = detect_setups(df, direction=direction)
 
         # Keep the strategy-output frame for the AI layer (plan 03-01): the
         # regime check and the proposal gate both build their context from it.
@@ -359,13 +380,24 @@ class LiveEngine:
                 "bar": new_bar_time.isoformat(),
             }
 
-        # 6) Setup: same arithmetic as backtest/engine.py (STRAT-03) — the
-        #    target is rr_multiple x the stop distance, where rr_multiple comes
-        #    from [strategy] (default 1.0 = the exact 1:1 that has been
-        #    measured live; 2.0 moves the target twice as far away). The log
-        #    gets 2-dp prices; the OrderRequest keeps full precision.
-        entry = float(df["resistance"].iloc[-1])
-        sl = float(df["support"].iloc[-1] - cfg.strategy.sl_buffer)
+        # 6) Setup: same arithmetic as backtest/engine.py levels_at + STRAT-03 —
+        #    the target is rr_multiple x the stop distance, where rr_multiple
+        #    comes from [strategy] (default 1.0 = the exact 1:1 that has been
+        #    measured live; 2.0 moves the target twice as far away). Geometry is
+        #    per side: a long breaks out above resistance and stops below
+        #    support; a short breaks down below support and stops above
+        #    resistance (support becomes resistance). The ONE tp formula
+        #    (tp = entry + rr_multiple x (entry - sl)) is direction-general —
+        #    the negative stop distance of a short puts the target below the
+        #    entry. The log gets 2-dp prices and the side; the OrderRequest
+        #    keeps full precision.
+        side = str(df["setup_dir"].iloc[-1]) if direction == "both" else direction
+        if side == "short":
+            entry = float(df["support"].iloc[-1])
+            sl = float(df["resistance"].iloc[-1] + cfg.strategy.sl_buffer)
+        else:
+            entry = float(df["resistance"].iloc[-1])
+            sl = float(df["support"].iloc[-1] - cfg.strategy.sl_buffer)
         tp = entry + cfg.strategy.rr_multiple * (entry - sl)
         log_decision(
             self._logger,
@@ -374,16 +406,20 @@ class LiveEngine:
             entry=_round2(entry),
             sl=_round2(sl),
             tp=_round2(tp),
+            side=side,
         )
-        return self.on_setup(entry, sl, tp, new_bar_time)
+        return self.on_setup(entry, sl, tp, new_bar_time, side=side)
 
     def on_setup(
-        self, entry: float, sl: float, tp: float, bar_time: pd.Timestamp
+        self, entry: float, sl: float, tp: float, bar_time: pd.Timestamp,
+        side: str = "long",
     ) -> dict:
         """Dedup -> safety gate -> risk gate -> place. Returns the order event dict.
 
         ``entry``/``sl``/``tp`` carry FULL precision into the OrderRequest
         (the wire); the decision log rounds them to 2 dp (XAUUSD quoting).
+        ``side`` ("long" default | "short") flows into the request, the
+        levels check and the market pricing (a short crosses the bid).
         """
         cfg = self._cfg
         req = OrderRequest(
@@ -395,13 +431,16 @@ class LiveEngine:
             magic=cfg.live.magic_number,
             deviation=cfg.live.deviation,
             comment=cfg.live.comment,
+            side=side,
         )
         bar = bar_time.isoformat()
 
         # 0) Refuse levels that cannot describe an exitable trade. This runs
         #    FIRST because every later guard reads these numbers and a NaN
-        #    silently defeats all of them — see levels_are_tradable.
-        if not levels_are_tradable(entry, sl, tp):
+        #    silently defeats all of them — see levels_are_tradable. The
+        #    tradability rule is side-aware (long: stop below entry; short:
+        #    sl > entry > tp).
+        if not levels_are_tradable(entry, sl, tp, side=side):
             log_decision(
                 self._logger,
                 "order_skipped",
@@ -410,7 +449,12 @@ class LiveEngine:
                 entry=entry,
                 sl=sl,
                 tp=tp,
-                detail="support/resistance incomplete or stop not below entry",
+                detail=(
+                    "short needs sl > entry > tp (stop above the reference "
+                    "support, target below it)"
+                    if side == "short"
+                    else "support/resistance incomplete or stop not below entry"
+                ),
             )
             return {"event": "order_skipped", "reason": "invalid_levels"}
 
@@ -465,7 +509,7 @@ class LiveEngine:
         #    gate. The default implementation is a no-op (returns None); the
         #    AIEngine subclass overrides it to consult the model and gate the
         #    setup. A returned dict short-circuits on_setup with that event.
-        ai_decision = self._ai_gate(entry, sl, tp, bar_time)
+        ai_decision = self._ai_gate(entry, sl, tp, bar_time, side=side)
         if ai_decision is not None:
             return ai_decision
 
@@ -491,17 +535,19 @@ class LiveEngine:
             }
 
         # 4) Price the trade against the MARKET, not the reference level.
-        #    A market buy crosses the ask, and the setup only fires once price
-        #    has closed ABOVE resistance, so the ask is always past the
-        #    reference entry. Sizing and the risk cap both read off the
-        #    reference understate the real risk, and understate it most when
-        #    the stop is tight: a live M1 trade was sized for $49.10 against a
-        #    $50.42 budget and actually risked $56.97, 13% over its own cap.
+        #    A market buy crosses the ASK and a market sell crosses the BID,
+        #    and the setup only fires once price has closed THROUGH the broken
+        #    level, so the traded price is always past the reference entry.
+        #    Sizing and the risk cap both read off the reference understate
+        #    the real risk, and understate it most when the stop is tight: a
+        #    live M1 trade was sized for $49.10 against a $50.42 budget and
+        #    actually risked $56.97, 13% over its own cap.
         #
         #    sl/tp keep the levels the strategy computed — the backtest also
         #    books them off the reference and fills at the market, so leaving
         #    them alone is what keeps live and simulated comparable. Only the
-        #    RISK ARITHMETIC moves to the ask.
+        #    RISK ARITHMETIC moves to the traded price (ask for a long, bid
+        #    for a short).
         try:
             q = self._broker.quote(live_symbol(cfg))
             # Tick economics in ACCOUNT currency — the only correct basis for
@@ -515,25 +561,41 @@ class LiveEngine:
                          bar=bar, detail=str(exc))
             return {"event": "order_skipped", "reason": "no_quote"}
 
-        entry_at_market = q.ask
-        risk_at_market = entry_at_market - sl
-        reward_at_market = tp - entry_at_market
+        entry_at_market = q.bid if side == "short" else q.ask
+        risk_at_market = (
+            (sl - entry_at_market) if side == "short" else (entry_at_market - sl)
+        )
+        reward_at_market = (
+            (entry_at_market - tp) if side == "short" else (tp - entry_at_market)
+        )
         if risk_at_market <= 0 or not math.isfinite(risk_at_market):
-            log_decision(self._logger, "order_skipped", reason="invalid_levels",
-                         bar=bar, ask=_round2(entry_at_market), sl=_round2(sl),
-                         detail="market is already at or below the stop")
+            log_decision(
+                self._logger, "order_skipped", reason="invalid_levels",
+                bar=bar,
+                **({"bid": _round2(entry_at_market)} if side == "short"
+                   else {"ask": _round2(entry_at_market)}),
+                sl=_round2(sl),
+                detail=(
+                    "market is already at or above the stop" if side == "short"
+                    else "market is already at or below the stop"
+                ),
+            )
             return {"event": "order_skipped", "reason": "invalid_levels"}
 
         # Has the market already run away from the setup? The levels imply
         # cfg.strategy.rr_multiple:1; if what is actually on offer has decayed
         # past min_rr, this is no longer the trade that was tested and taking
-        # it is chasing.
+        # it is chasing. Reward:risk is measured on the traded price — for a
+        # short the reward is bid - tp over sl - bid.
         rr = reward_at_market / risk_at_market
         if cfg.risk.min_rr > 0 and rr < cfg.risk.min_rr:
             log_decision(
                 self._logger, "order_skipped", reason="rr_degraded", bar=bar,
-                entry=_round2(entry), ask=_round2(entry_at_market),
-                slippage=_round2(entry_at_market - entry),
+                entry=_round2(entry),
+                **({"bid": _round2(entry_at_market)} if side == "short"
+                   else {"ask": _round2(entry_at_market)}),
+                slippage=_round2((entry - entry_at_market) if side == "short"
+                                 else (entry_at_market - entry)),
                 rr=round(rr, 3), min_rr=cfg.risk.min_rr,
             )
             return {"event": "order_skipped", "reason": "rr_degraded", "rr": rr}
@@ -634,14 +696,18 @@ class LiveEngine:
                 "cap": cap,
             }
 
-        # 8) Buy at market (full-precision prices on the wire; the adapter
-        #    rounds to the symbol's digits).
+        # 8) Buy or sell at market (full-precision prices on the wire; the
+        #    adapter rounds to the symbol's digits). A long goes through
+        #    place_market_buy (ask); a short through place_market_sell (bid).
         log_fields = {
             k: _round2(v) if isinstance(v, float) else v
             for k, v in req.to_log_fields().items()
         }
         try:
-            result = self._broker.place_market_buy(req)
+            if side == "short":
+                result = self._broker.place_market_sell(req)
+            else:
+                result = self._broker.place_market_buy(req)
         except BrokerRejectedError as exc:
             log_decision(
                 self._logger,
@@ -657,9 +723,11 @@ class LiveEngine:
         # log line is indistinguishable from a live placement.
         #
         # ``fill`` and ``slippage`` are the live-vs-backtest divergence made
-        # explicit. The backtest books this trade at max(entry, open); the
-        # market books it at whatever the ask was. Logging only one of the two
-        # would hide which set of numbers the equity curve belongs to.
+        # explicit. The backtest books this trade at max(entry, open) (min for
+        # a short); the market books it at whatever the ask/bid was. Logging
+        # only one of the two would hide which set of numbers the equity curve
+        # belongs to. Slippage is signed positive for both sides as the
+        # distance from the reference entry to the fill.
         fill = result.fill_price or None
         log_decision(
             self._logger,
@@ -668,7 +736,9 @@ class LiveEngine:
             ticket=result.ticket,
             placed=result.placed,
             fill=_round2(fill) if fill else None,
-            slippage=_round2(fill - entry) if fill else None,
+            slippage=_round2((entry - fill) if side == "short" else (fill - entry))
+            if fill
+            else None,
             **log_fields,
         )
         return {
@@ -678,4 +748,5 @@ class LiveEngine:
             "fill": result.fill_price,
             "sl": sl,
             "tp": tp,
+            "side": side,
         }

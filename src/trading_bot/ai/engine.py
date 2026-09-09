@@ -55,7 +55,7 @@ class AIEngine(LiveEngine):
         self._maybe_regime_check()
         return result
 
-    def _ai_gate(self, entry: float, sl: float, tp: float, bar_time) -> dict | None:
+    def _ai_gate(self, entry: float, sl: float, tp: float, bar_time, side: str = "long") -> dict | None:
         """Consult the model on this setup; gate it; skip or proceed.
 
         Runs between the parent's dedup/slot guards and its safety gate. Returns
@@ -100,7 +100,7 @@ class AIEngine(LiveEngine):
             entry=entry,
             sl=sl,
             tp=tp,
-            direction="long",
+            direction=side,
             min_confidence=cfg.ai.min_confidence,
             require_agreement=cfg.ai.require_agreement,
         )
