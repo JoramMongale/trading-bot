@@ -378,6 +378,11 @@ def _run_live(args) -> int:
         magic=cfg.live.magic_number,
         lot=cfg.trading.lot,
         enabled=cfg.live.enabled,
+        # Echo the loaded strategy values so the post-deploy verification can
+        # grep what the RUNNING process actually loaded (direction + rr_multiple
+        # decide which side(s) real orders take and at what target distance).
+        direction=cfg.strategy.direction,
+        rr_multiple=cfg.strategy.rr_multiple,
     )
 
     broker = build_broker(cfg, logger)

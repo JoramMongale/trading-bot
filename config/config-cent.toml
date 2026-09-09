@@ -27,8 +27,9 @@ end = "2026-07-31"
 fractal_left = 2
 fractal_right = 2
 sr_lookback = 60            # bars
-rr_multiple = 2.0           # 1:1 risk-reward
+rr_multiple = 1.0           # measured both-direction single-slot config (quick 20260909-gold-both-scalper): TP = 1x the stop distance, both sides share the one slot
 sl_buffer = 0.01            # one point below support
+direction = "both"      # long (default) | both — trade the short swing-S/R mirror in the same single slot (D-2)
 
 [trading]
 lot = 0.01

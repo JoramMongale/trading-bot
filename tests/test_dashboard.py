@@ -203,7 +203,7 @@ def test_risk_endpoint_shows_both_tags(client):
     tags = payload["tags"]
     assert set(tags) == {"cent", "btc"}
     assert tags["cent"]["risk"]["max_loss_pct_per_trade"] == "20.0"
-    assert tags["cent"]["strategy_rr_multiple"] == "2.0"
+    assert tags["cent"]["strategy_rr_multiple"] == "1.0"
     assert tags["btc"]["risk"]["max_loss_pct_per_trade"] == "10.0"
     assert tags["btc"]["strategy_rr_multiple"] == "2.0"
     # account-wide: 20 x 1 (cent) + 10 x 2 (btc) = 40.0 vs the 2.0 policy
@@ -282,7 +282,7 @@ def test_degraded_broker_keeps_bot_section(client, monkeypatch):
 def test_preview_benign_noop(client, bots):
     before = bots["cent"].read_bytes()
     payload = _post(client, "/api/risk/preview",
-                    {"tag": "cent", "set": ["strategy.rr_multiple=2.0"]})
+                    {"tag": "cent", "set": ["strategy.rr_multiple=1.0"]})
     assert payload["ok"] is True
     assert payload["no_change"] is True
     assert payload["requires_yes"] is False

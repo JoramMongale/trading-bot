@@ -359,19 +359,24 @@ def test_dotted_strategy_rr_multiple_edits_only_that_value(bots):
     edited = bots["cent"].read_text()
 
     # Exactly ONE line differs: the rr_multiple value token. The trailing
-    # inline comment (`# 1:1 risk-reward`) is preserved verbatim.
+    # inline comment (the measured both-direction config note) is preserved
+    # verbatim.
     orig_lines = original.splitlines()
     new_lines = edited.splitlines()
     assert len(new_lines) == len(orig_lines)
     diffs = [(i, a, b) for i, (a, b) in enumerate(zip(orig_lines, new_lines)) if a != b]
     assert len(diffs) == 1
     (idx, old, new) = diffs[0]
-    assert old == "rr_multiple = 2.0           # 1:1 risk-reward"
-    assert new == "rr_multiple = 3.0           # 1:1 risk-reward"
+    assert old == ("rr_multiple = 1.0           # measured both-direction single-slot "
+                   "config (quick 20260909-gold-both-scalper): TP = 1x the stop "
+                   "distance, both sides share the one slot")
+    assert new == ("rr_multiple = 3.0           # measured both-direction single-slot "
+                   "config (quick 20260909-gold-both-scalper): TP = 1x the stop "
+                   "distance, both sides share the one slot")
 
     # [risk] table untouched; comments preserved (incl. the inline one).
     assert "max_loss_pct_per_trade = 20.0" in edited
-    assert "# 1:1 risk-reward" in edited
+    assert "measured both-direction single-slot config" in edited
     comment_lines = [l for l in orig_lines if l.strip().startswith("#")]
     for c in comment_lines:
         assert c in new_lines
@@ -427,7 +432,7 @@ def test_view_prints_strategy_rr_multiple(bots, capsys):
     rc = tune_risk.main(["--tag", "cent"])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "strategy.rr_multiple = 2.0" in out
+    assert "strategy.rr_multiple = 1.0" in out
     assert "max_loss_pct_per_trade = 20.0" in out
 
 
