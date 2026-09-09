@@ -1,0 +1,47 @@
+version: 2
+
+sources:
+  - name: trading_bot
+    database: trading
+    schema: main
+    description: "Raw DuckDB tables written by the idempotent warehouse loader (plan 03-03)."
+    tables:
+      - name: raw_trades
+        description: "Backtest per-trade rows (output/trades.csv + output/ai_trades.csv)."
+        columns:
+          - name: source
+            description: "trades or ai_trades"
+          - name: entry_time
+            description: "Bar time of the entry (strategy timeframe)."
+      - name: raw_ledger
+        description: "trade_ledger.py merged ledger (output/ledger.csv)."
+      - name: raw_decisions
+        description: "Every SAFE-02 decision log line (output/*.log) with event + key=value fields as JSON."
+        columns:
+          - name: source_log
+            description: "Log filename the line came from."
+          - name: line_number
+            description: "1-based line number within the log file."
+      - name: raw_closes
+        description: "output/closes.log lines (event=trade_closed)."
+      - name: raw_ai_calls
+        description: "AI audit JSONL entries (output/ai_calls_*.jsonl): prompt context + model result."
+        columns:
+          - name: source_file
+          - name: ts
+          - name: kind
+            description: "propose_trade or assess_regime"
+      - name: raw_bars
+        description: "Market bars (data/processed/*.csv, plus data/raw M1 with --include-histdata)."
+        columns:
+          - name: time
+          - name: symbol
+          - name: timeframe
+      - name: raw_news_articles
+        description: "RSS news articles fetched by the news pipeline (03-04), link-deduped, lexicon-scored."
+        columns:
+          - name: title
+          - name: link
+          - name: source_feed
+          - name: score
+            description: "Deterministic lexicon sentiment in [-1, 1] (NULL when not scored)."

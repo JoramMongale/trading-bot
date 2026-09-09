@@ -1,0 +1,86 @@
+# Backtest-only config for Bitcoin (BTCUSDc on the broker's cent data).
+#
+# Do NOT use this to run live — the live bot is config/config-btc.toml. This
+# exists so `backtest` and `ai-backtest` can be pointed at the broker-fetched
+# M5 data (data/processed/BTCUSDc_M5_broker.csv) produced by
+# scripts/fetch_broker_history.py --config config/config-btc.toml:
+#
+#   python -m trading_bot.cli backtest \
+#       --config config/config-btc-backtest.toml \
+#       --m5-csv data/processed/BTCUSDc_M5_broker.csv
+#
+# Parameters follow the multi-instrument study convention (STATE.md 2026-08-20):
+# sl_buffer scaled per instrument as `10 * point`. Gold's 0.01 is 10 points on
+# a 3-dp symbol; BTCUSDc is 2-dp (point = 0.01), so 10 points = 0.10.
+
+[data]
+source = "mt5-csv"
+raw_dir = "data/processed"
+symbol = "BTCUSD"
+timeframe = "M5"
+start = "2025-09-13"
+end = "2026-08-27"
+
+[strategy]
+fractal_left = 2
+fractal_right = 2
+sr_lookback = 60            # bars
+rr_multiple = 1.0           # 1:1 risk-reward
+sl_buffer = 0.10            # 10 points below support (10 * point = 10 * 0.01)
+
+[trading]
+lot = 0.01
+# Backtest money conversion: pnl_points x contract_size x lot = account
+# currency. On BTCUSDc value-per-point-per-lot = tick_value/tick_size =
+# 0.01/0.01 = 1.0 USC. (Gold uses 100 oz/lot.)
+contract_size = 1.0
+spread_assumption = 0.0     # 0 = ignore spread in v1 (documented limitation)
+
+[backtest]
+output_dir = "output"
+
+[live]
+enabled = false          # this is a BACKTEST config — never live
+mode = "dry-run"
+magic_number = 77021
+deviation = 20
+poll_interval = 5.0
+comment = "btc-backtest"
+symbol = "BTCUSDc"
+bridge = "native"
+bridge_host = "localhost"
+bridge_port = 8001
+terminal_path = 'C:\MT5-Gold\terminal64.exe'
+terminal_portable = true
+replay_bars = 500
+session_hours = []
+weekend_stop_hour = 0
+weekend_resume_hour = 21
+reconnect_after = 3
+reconnect_backoff = 30.0
+
+[risk]
+max_loss_pct_per_trade = 0.5
+sizing = "percent"
+max_daily_loss_pct = 6.0
+lot_min = 0.01
+lot_step = 0.01
+max_leverage = 20.0
+max_concurrent = 2
+min_rr = 0.5
+
+[ai]
+enabled = false
+provider = "mock"
+model = "deepseek-chat"
+api_base = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+temperature = 0.2
+max_tokens = 500
+timeout = 30.0
+min_confidence = 70
+require_agreement = true
+regime_check_daily = true
+block_when_choppy = true
+record_calls = true
+prompt_dir = "prompts"

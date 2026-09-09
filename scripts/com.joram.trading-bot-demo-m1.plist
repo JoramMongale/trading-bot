@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.joram.trading-bot-demo-m1</string>
+
+    <!-- Runs the gold-breakout bot against the Exness MT5 DEMO account.
+         Entry point is a plain, readable script in this repo:
+           scripts/launchd_run.sh
+
+         Install:
+           cp scripts/com.joram.trading-bot-demo-m1.plist ~/Library/LaunchAgents/
+           launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.joram.trading-bot-demo-m1.plist
+
+         Remove:
+           launchctl bootout gui/$(id -u)/com.joram.trading-bot-demo-m1
+           rm ~/Library/LaunchAgents/com.joram.trading-bot-demo-m1.plist -->
+    <!-- INSTANCE picks the M1 sibling: config-m1.toml, magic 77002,
+         output/live_m1.log, output/live_m1.pid. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>INSTANCE</key>
+        <string>m1</string>
+    </dict>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/joram/projects/trading-bot/scripts/launchd_run.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/joram/projects/trading-bot</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart the bot if it exits for any reason. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Never respawn faster than once a minute. After a reboot the colima VM
+         and the MT5 terminal take minutes to become usable, and the wrapper
+         exits non-zero until they are; without throttling this would hot-loop. -->
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/joram/projects/trading-bot/output/launchd_m1.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/joram/projects/trading-bot/output/launchd_m1.err</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

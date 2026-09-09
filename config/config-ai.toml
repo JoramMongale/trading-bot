@@ -1,0 +1,78 @@
+# AI-layer config (plan 03-01): the hybrid system's non-deterministic half.
+#
+#   python -m trading_bot.cli ai-backtest --config config/config-ai.toml
+#   python -m trading_bot.cli live --config config/config-ai.toml --mode dry-run --once
+#
+# provider = "mock" is the OFFLINE default: no API key, no network, deterministic
+# output. Switch to "deepseek" only when you want real model calls AND you have
+# DEEPSEEK_API_KEY set in the environment (never in this file).
+#
+# The deterministic half (strategy/risk/live) below is the same gold M5 breakout
+# bot; the [ai] table only adds the reasoning filter on top of it.
+
+[data]
+source = "histdata"
+raw_dir = "data/raw"
+symbol = "XAUUSD"
+timeframe = "M5"
+start = "2024-01-01"
+end = "2026-07-31"
+
+[strategy]
+fractal_left = 2
+fractal_right = 2
+sr_lookback = 60            # bars
+rr_multiple = 1.0           # 1:1 risk-reward
+sl_buffer = 0.01            # one point below support
+
+[trading]
+lot = 0.01
+contract_size = 100         # oz per lot, for USD conversion
+spread_assumption = 0.0     # 0 = ignore spread in v1 (documented limitation)
+
+[backtest]
+output_dir = "output"
+
+[live]
+enabled = false             # SAFE-03: real-account execution stays opt-in
+mode = "dry-run"            # dry-run | demo | live
+magic_number = 77100
+deviation = 20
+poll_interval = 5.0
+comment = "gold-breakout-ai"
+symbol = "XAUUSDm"
+bridge = "auto"
+bridge_host = "localhost"
+bridge_port = 8001
+replay_bars = 500
+# Multi-day history window for the AI regime read (03-02). 5000 M5 bars ≈ 17
+# days; the strategy chain is unaffected (S/R expiry is window-bounded).
+fetch_bars = 5000
+
+[risk]
+max_loss_pct_per_trade = 1.0
+sizing = "percent"
+max_daily_loss_pct = 6.0
+lot_min = 0.01
+lot_step = 0.01
+max_leverage = 20.0
+max_concurrent = 1
+min_rr = 0.5
+
+[ai]
+# enabled = true turns the AI layer on inside the live engine (AIEngine). It is
+# inert for ai-backtest, which always runs the gate regardless.
+enabled = false
+provider = "deepseek"       # "mock" (offline) | "deepseek"
+model = "deepseek-chat"     # deepseek-chat | deepseek-reasoner
+api_base = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"   # secret lives in the environment, not here
+temperature = 0.2
+max_tokens = 500
+timeout = 30.0
+min_confidence = 70         # below this, the gate blocks the setup
+require_agreement = true    # AI bias must match the deterministic direction
+regime_check_daily = true   # once per UTC day, ask about the market regime
+block_when_choppy = true    # suppress setups on CHOPPY / tradeable=false days
+record_calls = true         # JSONL audit of every prompt+response
+prompt_dir = "prompts"

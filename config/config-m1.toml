@@ -1,0 +1,116 @@
+# M1 sibling of config.toml — a live A/B against the M5 bot.
+#
+# WHY THIS EXISTS: the backtest says M1 is materially worse (gross edge already
+# negative before costs, stops half the size so the spread costs twice as much,
+# -0.47 R/day against M5's +0.03). This runs it for real on demo instead of
+# arguing about the backtest. See STATE.md "Timeframe Finding".
+#
+# THREE THINGS MUST DIFFER from config.toml, and all three matter:
+#   magic_number  77002, not 77001. The dedup and one-trade-at-a-time guards
+#                 filter by magic, so a shared one would make each bot treat
+#                 the other's position as its own and stop trading.
+#   --log         live_m1.log, or the two interleave into one file and the
+#                 comparison is unreadable.
+#   risk cap      1%, not 2%. Both bots size off the SAME account balance, so
+#                 two concurrent positions at 2% each would put 4% of the
+#                 account at risk against a 2% policy. Halved, the total
+#                 exposure stays where it was meant to be.
+#
+# Note the daily loss limit reads account balance, which both bots move, so
+# either one's losses can halt the other. That is conservative, and correct:
+# the limit is about the ACCOUNT's day, not one strategy's day.
+
+[data]
+source = "histdata"          # histdata | mt5-csv (mt5-package later)
+raw_dir = "data/raw"
+symbol = "XAUUSD"
+timeframe = "M1"
+start = "2024-01-01"
+end = "2026-07-31"
+
+[strategy]
+fractal_left = 2
+fractal_right = 2
+sr_lookback = 60            # bars
+rr_multiple = 1.0           # 1:1 risk-reward
+sl_buffer = 0.01            # one point below support
+
+[trading]
+lot = 0.01
+contract_size = 100         # oz per lot, for USD conversion
+spread_assumption = 0.0     # 0 = ignore spread in v1 (documented limitation)
+
+[backtest]
+output_dir = "output"
+
+[live]
+enabled = false          # explicit opt-in permitting REAL-account execution (SAFE-03)
+mode = "dry-run"         # dry-run | demo | live
+magic_number = 77002     # bot identifier for order filtering (EXEC-03)
+deviation = 20           # max slippage in points for order_send
+poll_interval = 5.0      # seconds between live bar checks
+comment = "gold-breakout-m1"
+
+# Broker's name for the instrument when it differs from the data vendor's.
+# [data] symbol names the histdata CSVs; Exness quotes gold as XAUUSDm on a
+# Standard account. Empty = use [data] symbol unchanged.
+symbol = "XAUUSDm"
+
+# How the MT5 adapter reaches a terminal (demo/live modes only):
+#   native  = MetaTrader5 pip package (Windows only)
+#   silicon = siliconmetatrader5 RPC bridge to a containerised terminal
+#             (the only route on macOS — no MetaTrader5 wheel exists)
+#   auto    = try native, fall back to the bridge
+bridge = "auto"
+bridge_host = "localhost"
+bridge_port = 8001
+
+# Dry-run only: bars of history to rewind before replaying, so a dry-run poll
+# loop walks real bars one at a time instead of idling on a static frame.
+replay_bars = 500
+
+[risk]
+# Hard ceiling on what ONE trade may cost, as a percentage of account balance.
+# Checked before every placement; over-budget setups are skipped and logged
+# with the numbers (reason="risk_exceeded"), never resized — 0.01 lots is
+# already the broker minimum, so there is nothing smaller to fall back to.
+#
+# The stop is structural (support - sl_buffer), so its size comes from the
+# market, not the account. Across the 340 recorded backtest trades the stop
+# distance was $5.33 min / $24.30 median / $59.78 p95 / $129.76 max per 0.01
+# lot. At 2% that needs roughly $1,215 of balance for the median trade to
+# clear the gate, and about $3,000 for the p95. Below that the bot will
+# correctly refuse to trade rather than risk the account on one breakout.
+max_loss_pct_per_trade = 1.0
+
+# How the position is sized.
+#   "fixed"   - always trade [trading] lot, and BLOCK when that risks more than
+#               the cap. On a small account this blocks everything, because
+#               0.01 lots is the broker's floor and the stop is structural.
+#   "percent" - size the position so the stop costs exactly the cap. This is
+#               what makes the cap a risk POLICY rather than a veto, and the
+#               only mode in which the account compounds: size grows with
+#               equity and shrinks after a loss. Still refuses when the answer
+#               falls below lot_min, which is the honest outcome on a small
+#               account rather than rounding up and breaking the cap.
+sizing = "percent"
+
+# Stop trading for the rest of the day once the day is down this much, measured
+# against the balance at the first placement-check of that day. Counts REALISED
+# losses, so an open position drifting against you does not trip it but a
+# stop-out does. 0 disables. A prop desk would run 4-6%.
+max_daily_loss_pct = 6.0
+
+# Lot grid used by "percent" sizing. Must match the broker's symbol limits;
+# the MT5 adapter re-checks against the real ones and refuses rather than
+# rounding up, so a wrong value here costs a skipped trade, never oversizing.
+# Refuse a setup whose reward:risk has already decayed below this by the time
+# we can act. The strategy's levels imply exactly 1:1, but a market buy fills
+# at the ask — above the reference entry — so the stop is further away and the
+# target closer before the trade starts. Live M1 trade 3114935513 was booked at
+# 1.00R by the backtest and opened at 0.72R. Past some point what is on offer
+# is not the trade that was tested, and taking it is chasing. 0 disables.
+min_rr = 0.5
+
+lot_min = 0.01
+lot_step = 0.01

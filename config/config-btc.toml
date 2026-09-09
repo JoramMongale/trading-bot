@@ -1,0 +1,175 @@
+# Bitcoin on its own CENT account — the weekend instrument.
+#
+# BTCUSDc trades 24/7, which is the entire reason to run it: gold is shut from
+# Friday 21:00 to Sunday 21:00 UTC, so nothing else is available.
+#
+# LIVE account: 161700182 @ Exness-MT5Real21 (USC cent), its own terminal at
+# C:\MT5-Gold\terminal64.exe. Verified live: contract 0.01, min lot 0.01,
+# tick_size 0.01, tick_value 0.01. The median backtested stop (753.81) at
+# minimum size risks 7.54 USC — 0.24% of a 3,138 USC balance. Cheaper than
+# gold by 4x. This replaces the original shared-account design (quick task
+# 007): BTC risk is isolated from the gold cent account, caps apply per-account,
+# and each account's base stake/banking are tracked independently.
+#
+# EXPECT IT TO LOSE. BTCUSD measured -0.033 avg R across the cross-instrument
+# study, among the worst of the seventeen tested, and weekend crypto is thinner
+# and gappier than the M5 data the strategy was fitted on. It is affordable to
+# run, which is not the same as worth running. Judge it on R per trade, not on
+# the P&L of a handful of fills.
+#
+# magic 77021 keeps it distinct from gold's 77020 — the dedup and
+# one-trade-at-a-time guards filter by magic, so a shared number would make
+# each bot mistake the other's position for its own.
+#
+# Set mode = "live" and enabled = true by hand when switching it on.
+
+[data]
+source = "histdata"          # histdata | mt5-csv (mt5-package later)
+raw_dir = "data/raw"
+symbol = "XAUUSD"
+timeframe = "M5"
+start = "2024-01-01"
+end = "2026-07-31"
+
+[strategy]
+fractal_left = 2
+fractal_right = 2
+sr_lookback = 60            # bars
+rr_multiple = 2.0           # 1:1 risk-reward -> 1.5:1 take-profit (2026-08-27, was 1.0)
+sl_buffer = 0.01            # one point below support
+
+[trading]
+lot = 0.01
+# Backtest-only money conversion: pnl_points x contract_size x lot = account
+# currency. On XAUUSDm 100 oz/lot; on BTCUSDc the value-per-point-per-lot is
+# tick_value/tick_size = 0.01/0.01 = 1.0 USC, so 1.0 (not 100). Live risk
+# never reads this — it uses the broker's trade_tick_value instead.
+contract_size = 1.0
+spread_assumption = 0.0     # 0 = ignore spread in v1 (documented limitation)
+
+[backtest]
+output_dir = "output"
+
+[live]
+enabled = true           # explicit opt-in permitting REAL-account execution (SAFE-03)
+mode = "live"         # dry-run | demo | live
+magic_number = 77021     # bot identifier for order filtering (EXEC-03)
+deviation = 20           # max slippage in points for order_send
+poll_interval = 5.0      # seconds between live bar checks
+comment = "btc-cent"
+
+# Broker's name for the instrument when it differs from the data vendor's.
+# This cent terminal quotes BTCUSDc (not BTCUSDm — that is the Standard-account
+# name). [data] symbol names the histdata CSVs; here they differ.
+symbol = "BTCUSDc"
+
+# How the MT5 adapter reaches a terminal (demo/live modes only):
+#   native  = MetaTrader5 pip package (Windows only)
+#   silicon = siliconmetatrader5 RPC bridge to a containerised terminal
+#             (the only route on macOS — no MetaTrader5 wheel exists)
+#   auto    = try native, fall back to the bridge
+bridge = "native"
+bridge_host = "localhost"
+bridge_port = 8001
+terminal_path = 'C:\MT5-Gold\terminal64.exe'
+
+# WINDOWS ONLY — which terminal INSTALL this bot attaches to. See the same
+# block in config-cent.toml for why this is required once a second terminal
+# exists, and why getting it wrong is silent rather than loud.
+#
+#   bridge = "native"
+#   terminal_path = 'C:\MT5-Gold\terminal64.exe'  (owns account 161700182)
+
+# Dry-run only: bars of history to rewind before replaying, so a dry-run poll
+# loop walks real bars one at a time instead of idling on a static frame.
+replay_bars = 500
+
+[risk]
+# Hard ceiling on what ONE trade may cost, as a percentage of account balance.
+# Checked before every placement; over-budget setups are skipped and logged
+# with the numbers (reason="risk_exceeded"), never resized — 0.01 lots is
+# already the broker minimum, so there is nothing smaller to fall back to.
+#
+# The stop is structural (support - sl_buffer), so its size comes from the
+# market, not the account. Across the 340 recorded backtest trades the stop
+# distance was $5.33 min / $24.30 median / $59.78 p95 / $129.76 max per 0.01
+# lot. At 2% that needs roughly $1,215 of balance for the median trade to
+# clear the gate, and about $3,000 for the p95. Below that the bot will
+# correctly refuse to trade rather than risk the account on one breakout.
+# 0.5% x 2 slots = 1% from THIS account. BTC is on its own cent account
+# (161700182) after quick task 007, so this bot's caps apply per-account —
+# nothing sums with gold (161693049), and each account carries only its own bot.
+#
+# The per-trade cap and max_concurrent must always move TOGETHER. Raising slots
+# without lowering the cap doubles the money at risk, which measured out at
+# nearly double the drawdown (8.8% -> 15.3%) for an unchanged edge. That is
+# leverage, not improvement.
+#
+# BTC can afford 0.5% where gold cannot: one lot is 0.01 BTC, so even a 759-point
+# median stop costs 7.59 USC at minimum size. Gold's median setup at a 0.5% cap
+# needs a balance of ~R778 (see config-cent.toml).
+#
+# User decision 2026-08-28: raised to 10% per trade with max_leverage 50 so a
+# bigger winner pays out (three TPs booked R4 at the old 0.5% cap; the same
+# move at 10% is ~R80). AGGRESSIVE — warning thresholds in tune_risk.py expect
+# this to be confirmed with --yes. cap x slots = 10% x 2 = 20% account-wide
+# if both stops hit.
+max_loss_pct_per_trade = 10.0
+
+# How many positions (open + armed) may exist at once, on this magic number.
+#
+# Measured out-of-sample on gold, train 70% / test 30%:
+#   slots  trades   avgR      t     maxDD
+#       1      92  +0.1183  +1.25    8.8%
+#       2     181  +0.1164  +1.73   15.3%   <- R per trade unchanged, 2x sample
+#       3     264  +0.0811  +1.44   24.8%   <- edge degrades
+#       4     334  +0.0622  +1.25   31.3%
+#
+# Two slots does NOT improve the edge; it doubles the SAMPLE, which is the only
+# thing that shortens the ~2,000 trades needed to tell a real edge from zero.
+# The single-slot guard was declining trades, not bad trades. Three or more
+# degrades materially — the later concurrent setups arrive further into an
+# extended move, further from the level that defined them.
+#
+# This MUST match the max_concurrent the backtest was run at, or every statistic
+# that backtest produced understates live exposure.
+max_concurrent = 2
+
+# How the position is sized.
+#   "fixed"   - always trade [trading] lot, and BLOCK when that risks more than
+#               the cap. On a small account this blocks everything, because
+#               0.01 lots is the broker's floor and the stop is structural.
+#   "percent" - size the position so the stop costs exactly the cap. This is
+#               what makes the cap a risk POLICY rather than a veto, and the
+#               only mode in which the account compounds: size grows with
+#               equity and shrinks after a loss. Still refuses when the answer
+#               falls below lot_min, which is the honest outcome on a small
+#               account rather than rounding up and breaking the cap.
+sizing = "percent"
+
+# Stop trading for the rest of the day once the day is down this much, measured
+# against the balance at the first placement-check of that day. Counts REALISED
+# losses, so an open position drifting against you does not trip it but a
+# stop-out does. 0 disables. A prop desk would run 4-6%.
+max_daily_loss_pct = 6.0
+
+# Exposure ceiling (notional = balance x this) bounding position size even
+# when a tight stop would otherwise size it far larger — a gap jumps past the
+# stop and the loss is then set by position size alone. Raised 0.5%->10% cap
+# on 2026-08-28 (user decision): the old 20x default would now bind on the
+# median stop, so it goes to 50x alongside the higher cap.
+max_leverage = 50.0
+
+# Lot grid used by "percent" sizing. Must match the broker's symbol limits;
+# the MT5 adapter re-checks against the real ones and refuses rather than
+# rounding up, so a wrong value here costs a skipped trade, never oversizing.
+# Refuse a setup whose reward:risk has already decayed below this by the time
+# we can act. The strategy's levels imply exactly 1:1, but a market buy fills
+# at the ask — above the reference entry — so the stop is further away and the
+# target closer before the trade starts. Live M1 trade 3114935513 was booked at
+# 1.00R by the backtest and opened at 0.72R. Past some point what is on offer
+# is not the trade that was tested, and taking it is chasing. 0 disables.
+min_rr = 0.5
+
+lot_min = 0.01
+lot_step = 0.01

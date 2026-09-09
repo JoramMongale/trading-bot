@@ -1,0 +1,87 @@
+# Backtest-only config for the candle-reversal TEST strategy (variant seam,
+# added 2026-08-28). This is a research/experiment surface, NOT wired into the
+# live engine — the live bots always run the breakout variant.
+#
+# Run against the broker-fetched gold M5 data:
+#
+#   python -m trading_bot.cli backtest \
+#       --config config/config-candle-test.toml \
+#       --m5-csv data/processed/XAUUSDc_M5_broker.csv
+#
+# Geometry (user spec): a bullish candle after a bearish candle; entry at the
+# top of the signal candle's upper wick (its high), SL below the bottom wick
+# (its low), TP = entry + rr_multiple x (high - low). rr_multiple 2.5 => TP at
+# 2.5x the candle range. Measured on this data this signal loses on both gold
+# and BTC (see .planning/quick/20260828-candle-reversal-falsified/) — this file
+# exists so the variant can be compared, not because it is profitable.
+
+[data]
+source = "mt5-csv"
+raw_dir = "data/processed"
+symbol = "XAUUSD"
+timeframe = "M5"
+start = "2025-04-01"
+end = "2026-08-28"
+
+[strategy]
+fractal_left = 2
+fractal_right = 2
+sr_lookback = 60            # bars (unused by candle_reversal; kept for shape)
+rr_multiple = 2.5           # TP = entry + 2.5 x candle range (user decision)
+sl_buffer = 0.01            # unused by candle_reversal; kept for shape
+variant = "candle_reversal"
+
+[trading]
+lot = 0.01
+# Value-per-point-per-lot on XAUUSDc (tick_value/tick_size = 0.01/0.01 = 1.0 USC)
+contract_size = 1.0
+spread_assumption = 0.0     # 0 = ignore spread (documented v1 limitation)
+
+[backtest]
+output_dir = "output"
+
+[live]
+enabled = false          # TEST config — never live
+mode = "dry-run"
+magic_number = 77021
+deviation = 20
+poll_interval = 5.0
+comment = "candle-test"
+symbol = "XAUUSDc"
+bridge = "native"
+bridge_host = "localhost"
+bridge_port = 8001
+terminal_path = 'C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe'
+terminal_portable = true
+replay_bars = 500
+session_hours = []
+weekend_stop_hour = 0
+weekend_resume_hour = 21
+reconnect_after = 3
+reconnect_backoff = 30.0
+
+[risk]
+max_loss_pct_per_trade = 0.5
+sizing = "percent"
+max_daily_loss_pct = 6.0
+lot_min = 0.01
+lot_step = 0.01
+max_leverage = 20.0
+max_concurrent = 1
+min_rr = 0.5
+
+[ai]
+enabled = false
+provider = "mock"
+model = "deepseek-chat"
+api_base = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+temperature = 0.2
+max_tokens = 500
+timeout = 30.0
+min_confidence = 70
+require_agreement = true
+regime_check_daily = true
+block_when_choppy = true
+record_calls = true
+prompt_dir = "prompts"

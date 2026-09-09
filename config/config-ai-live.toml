@@ -1,0 +1,102 @@
+# Paper-trading AI config (plan 03-02): the AI layer inside the real live
+# engine, on the cent gold account shape (XAUUSDc, tick-value sizing).
+#
+#   Offline mock dry-run (no key, no network):
+#     python -m trading_bot.cli live --config config/config-ai-live.toml --mode dry-run --once
+#
+#   Real DeepSeek dry-run (requires DEEPSEEK_API_KEY in the environment):
+#     python -m trading_bot.cli live --config config/config-ai-live.toml --mode dry-run --once --provider deepseek
+#
+# provider = "mock" is the OFFLINE default: no API key, no network,
+# deterministic output. Switch to "deepseek" only when you want real model
+# calls AND you have DEEPSEEK_API_KEY set in the environment (never in this
+# file — secrets live outside TOML by policy). `--provider deepseek` can
+# override per run without touching this file.
+#
+# SAFE-03 stays intact: [live] enabled = false, so no REAL-account execution is
+# possible from this config. mode = "demo" narrows the account check further;
+# demo-mode live trading with AI is the user's later, separate opt-in.
+
+[data]
+source = "histdata"
+raw_dir = "data/raw"
+symbol = "XAUUSD"
+timeframe = "M5"
+start = "2024-01-01"
+end = "2026-07-31"
+
+[strategy]
+fractal_left = 2
+fractal_right = 2
+sr_lookback = 60            # bars
+rr_multiple = 1.0           # 1:1 risk-reward
+sl_buffer = 0.01            # one point below support
+
+[trading]
+lot = 0.01
+contract_size = 100         # oz per lot, backtester-only (risk reads tick_value)
+spread_assumption = 0.0
+
+[backtest]
+output_dir = "output"
+
+[live]
+enabled = false             # SAFE-03: real-account execution stays a separate human decision
+mode = "demo"               # dry-run | demo | live (demo narrows the account check)
+magic_number = 77200        # bot identifier (EXEC-03); distinct from 77020/77100
+deviation = 20
+poll_interval = 5.0
+comment = "gold-ai-demo"
+# Multi-day history window for the AI regime read (03-02): ~17 days of M5.
+# The strategy chain is unaffected (S/R expiry is window-bounded).
+fetch_bars = 5000
+# Weekend guard (04-01): refuse NEW gold entries after Friday 19:00 UTC.
+weekend_stop_hour = 19
+weekend_resume_hour = 21
+# Reconnect (04-01).
+reconnect_after = 3
+reconnect_backoff = 30.0
+# Broker's name for the instrument. Exness quotes the cent gold as XAUUSDc.
+symbol = "XAUUSDc"
+# How the MT5 adapter reaches a terminal (demo/live modes only):
+#   native  = MetaTrader5 pip package (Windows only)
+#   silicon = siliconmetatrader5 RPC bridge to a containerised terminal
+#   auto    = try native, fall back to the bridge
+bridge = "native"
+bridge_host = "localhost"
+bridge_port = 8001
+terminal_path = 'C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe'
+
+# Dry-run only: bars of history to rewind before replaying.
+replay_bars = 500
+
+[risk]
+# Paper-trading risk: same cent-account shape as config-cent.toml. The stop is
+# structural (support - sl_buffer), so its cost comes from the market.
+max_loss_pct_per_trade = 2.0
+sizing = "percent"
+max_daily_loss_pct = 6.0
+lot_min = 0.01
+lot_step = 0.01
+max_leverage = 20.0
+max_concurrent = 1
+min_rr = 0.5
+
+[ai]
+# enabled = true turns the AI layer on inside the live engine (AIEngine): the
+# model REASONS (regime once per day + a proposal per setup), the pure
+# deterministic gate (ai/gate.py) DISPOSES before the execution path acts.
+enabled = true
+provider = "mock"           # offline-first default; switch to deepseek via --provider or config
+model = "deepseek-chat"     # deepseek-chat | deepseek-reasoner
+api_base = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"   # secret lives in the environment, not here
+temperature = 0.2
+max_tokens = 500
+timeout = 30.0
+min_confidence = 70         # below this, the gate blocks the setup
+require_agreement = true    # AI bias must match the deterministic direction
+regime_check_daily = true   # once per UTC day, ask about the market regime
+block_when_choppy = true    # suppress setups on CHOPPY / tradeable=false days
+record_calls = true         # JSONL audit of every prompt+response (SAFE-02)
+prompt_dir = "prompts"

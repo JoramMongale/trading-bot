@@ -1,0 +1,63 @@
+# GBP/JPY BACKTEST-ONLY config — v1.1 instrument-correct machinery.
+#
+# Structural guarantee (INST-04): [live] enabled=false, mode="dry-run". The
+# backtest CLI REFUSES any config with [live] enabled=true, so this file is
+# the only shape an GBPJPY run may take. Never flip enabled here — create a
+# dedicated live config in the live-wiring milestone instead.
+#
+# Money + spread semantics come from the broker spec sidecar ([data] spec_file,
+# written by scripts/fetch_broker_history.py in Phase 6), NOT from
+# [trading] contract_size (kept only for schema/legacy compat). Value per
+# price-unit per lot = tick_value / tick_size from the sidecar.
+#
+# UNVERIFIED until Phase 6 reads the real terminal: digits=3/point=0.001 and
+# the cent symbol GBPJPYc follow the Exness cent convention but MUST be
+# confirmed from symbol_info() at fetch time (config-eurjpy.toml checklist).
+
+[data]
+source = "mt5-csv"
+raw_dir = "data/processed"
+symbol = "GBPJPY"
+timeframe = "M5"
+spec_file = "data/processed/GBPJPYc_M5_broker.spec.json"
+start = ""
+end = ""
+
+[strategy]
+fractal_left = 2
+fractal_right = 2
+sr_lookback = 60            # bars
+rr_multiple = 1.0           # 1:1 risk-reward (the only measured ratio)
+sl_buffer_points = 10       # buffer in POINTS: 10 × spec.point = 10 × 0.001 = 0.01 price
+                            # (gold's 0.01 == 10 points only by the same 3-dp coincidence —
+                            # expressed in points so the spec, not luck, sets the stop buffer)
+
+[trading]
+lot = 0.01
+contract_size = 100         # BACKTEST-LEGACY only; ignored when spec_file present (INST-01)
+
+[backtest]
+output_dir = "output"
+
+[live]
+enabled = false          # structural: backtest CLI refuses enabled=true (INST-04)
+mode = "dry-run"         # dry-run | demo | live
+magic_number = 77023
+deviation = 20
+poll_interval = 5.0
+comment = "gbpjpy-backtest"
+symbol = "GBPJPYc"
+bridge = "native"
+bridge_host = "localhost"
+bridge_port = 8001
+replay_bars = 500
+
+[risk]
+max_loss_pct_per_trade = 0.5
+sizing = "percent"
+max_daily_loss_pct = 6.0
+lot_min = 0.01
+lot_step = 0.01
+max_leverage = 20.0
+max_concurrent = 1
+min_rr = 0.5

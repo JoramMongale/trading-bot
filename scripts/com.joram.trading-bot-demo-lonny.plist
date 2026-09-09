@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.joram.trading-bot-demo-lonny</string>
+
+    <!-- Runs the gold-breakout bot against the Exness MT5 DEMO account.
+         Entry point is a plain, readable script in this repo:
+           scripts/launchd_run.sh
+
+         Install:
+           cp scripts/com.joram.trading-bot-demo-lonny.plist ~/Library/LaunchAgents/
+           launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.joram.trading-bot-demo-lonny.plist
+
+         Remove:
+           launchctl bootout gui/$(id -u)/com.joram.trading-bot-demo-lonny
+           rm ~/Library/LaunchAgents/com.joram.trading-bot-demo-lonny.plist -->
+    <!-- INSTANCE picks the London+NY sibling: config-lonny.toml, magic 77003,
+         output/live_lonny.log, output/live_lonny.pid. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>INSTANCE</key>
+        <string>lonny</string>
+    </dict>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/joram/projects/trading-bot/scripts/launchd_run.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/joram/projects/trading-bot</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart the bot if it exits for any reason. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Never respawn faster than once a minute. After a reboot the colima VM
+         and the MT5 terminal take minutes to become usable, and the wrapper
+         exits non-zero until they are; without throttling this would hot-loop. -->
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/joram/projects/trading-bot/output/launchd_lonny.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/joram/projects/trading-bot/output/launchd_lonny.err</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

@@ -1,0 +1,99 @@
+version: 2
+
+models:
+  - name: stg_trades
+    description: "Typed backtest trades, deduped by (source, entry_time, entry)."
+    columns:
+      - name: entry_time
+        tests:
+          - not_null
+      - name: entry
+        tests:
+          - not_null
+      - name: source
+        tests:
+          - not_null
+
+  - name: stg_decisions
+    description: "Every SAFE-02 decision line, deduped by (source_log, line_number)."
+    columns:
+      - name: source_log
+        tests:
+          - not_null
+      - name: line_number
+        tests:
+          - not_null
+      - name: event
+        tests:
+          - not_null
+
+  - name: stg_ai_calls
+    description: "AI audit entries, deduped by (source_file, ts)."
+    columns:
+      - name: source_file
+        tests:
+          - not_null
+      - name: ts
+        tests:
+          - not_null
+      - name: kind
+        tests:
+          - not_null
+
+  - name: stg_closes
+    description: "trade_closed lines, deduped by (source_log, line_number)."
+    columns:
+      - name: source_log
+        tests:
+          - not_null
+      - name: line_number
+        tests:
+          - not_null
+
+  - name: stg_bars
+    description: "Typed market bars, deduped by (source_file, time)."
+    columns:
+      - name: time
+        tests:
+          - not_null
+
+  - name: stg_news_articles
+    description: "RSS news articles, link-deduped, title/link required."
+    columns:
+      - name: link
+        tests:
+          - not_null
+      - name: title
+        tests:
+          - not_null
+
+  - name: mart_news_sentiment_daily
+    description: "Per-day lexicon sentiment aggregation."
+    columns:
+      - name: day
+        tests:
+          - not_null
+          - unique
+
+  - name: mart_trade_ledger
+    description: "Backtest + live trades in one ledger."
+    columns:
+      - name: source
+        tests:
+          - not_null
+
+  - name: mart_ai_gate_activity
+    description: "Per-day AI gate consultations/approvals/blocks."
+    columns:
+      - name: day
+        tests:
+          - not_null
+          - unique
+
+  - name: mart_bot_health
+    description: "Per-log poll freshness for the dashboard."
+    columns:
+      - name: source_log
+        tests:
+          - not_null
+          - unique

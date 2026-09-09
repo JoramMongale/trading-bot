@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.joram.trading-bot-cent</string>
+
+    <!-- REAL MONEY account 161693049 (Exness-MT5Real21, currency USC).
+         Runs the XAUUSDc live bot (magic 77020) under launchd 24/7.
+         Entry point is a plain, readable script in this repo:
+           scripts/launchd_run_live.sh cent
+
+         Install:
+           cp scripts/com.joram.trading-bot-cent.plist ~/Library/LaunchAgents/
+           launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.joram.trading-bot-cent.plist
+
+         STOP FOR GOOD:
+           launchctl bootout gui/$(id -u)/com.joram.trading-bot-cent
+         A plain `kill` on the bot only causes launchd to restart it within ~60s.
+
+         The agent stands down automatically while a manual supervise_live.sh
+         bot is running (it exits 0 when output/live_cent.pid is alive), so it
+         is safe to bootstrap while the manual supervisors are up.
+
+         WEEKEND-GAP NOTE: gold is shut Friday 21:00 to Sunday 21:00 UTC. Under
+         24/7 launchd nobody is at the terminal Friday evening to close a
+         late-Friday position by hand; whether that is acceptable is a recorded
+         human decision (see 002-SUMMARY.md), not something this plist decides. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/joram/projects/trading-bot/scripts/launchd_run_live.sh</string>
+        <string>cent</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/joram/projects/trading-bot</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart the bot if it exits for any reason. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Never respawn faster than once a minute. After a reboot the colima VM
+         and the MT5 terminal take minutes to become usable, and the wrapper
+         exits non-zero until they are; without throttling this would hot-loop. -->
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/joram/projects/trading-bot/output/launchd_live_cent.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/joram/projects/trading-bot/output/launchd_live_cent.err</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

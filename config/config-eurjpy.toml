@@ -1,0 +1,134 @@
+# EUR/JPY on its own account — the best-evidenced instrument in the study,
+# which is not the same as an instrument with a proven edge.
+#
+# WHY THIS ONE. The 17-symbol sweep (STATE.md, 2026-08-20) ranked EURJPY first
+# at +0.135 avg R net of one spread, and it was one of only TWO instruments
+# (with GBPJPY) positive in BOTH halves of the split-sample test. Gold, by
+# contrast, flipped sign in the recent half of its own data (+0.092 -> -0.005).
+#
+# WHY THAT IS NOT A GREEN LIGHT. At ~100 trades and R-multiple std ~0.9 the
+# standard error on mean R is ~0.09 — the same size as the edge. EURJPY is
+# t=1.95: its 95% CI contains zero, like every other instrument's. The
+# between-halves correlation across instruments was +0.27 where ~0.53 is needed
+# for significance, and 6 of 14 flipped sign. That is close to what shuffling
+# produces. "Best of seventeen" selected on the same data that measured it is a
+# ranking artefact until it survives out-of-sample.
+#
+# STARTS DISABLED AND IN DRY-RUN, DELIBERATELY. Three numbers below are marked
+# UNVERIFIED because they have never been measured on this instrument, and the
+# repo's rule is that config comments cite evidence rather than guesses. Do not
+# set mode = "live" until the "Before this may trade" checklist is done.
+#
+# magic 77022 follows gold 77020 and bitcoin 77021 — the dedup and
+# one-trade-at-a-time guards filter by magic, so a shared number would make
+# each bot mistake the other's position for its own.
+
+# ---------------------------------------------------------------------------
+# Before this may trade — the checklist
+# ---------------------------------------------------------------------------
+# 1. Read the broker's real symbol from Market Watch. "EURJPYc" below is the
+#    cent-account convention inferred from XAUUSDc/BTCUSDc; it is NOT verified.
+#    Suffixes are broker- and account-type specific. Do not guess.
+# 2. Confirm digits/point. sl_buffer = 0.01 is 10 points on a 3-decimal quote.
+#    XAUUSDc and EURJPY are BOTH 3-decimal, so gold's committed value happens
+#    to carry over — verify rather than rely on the coincidence. On a 5-decimal
+#    pair (EURUSD) the same 0.01 would be 100 pips and would be catastrophic.
+# 3. Measure the stop-distance distribution on EURJPY M1 data the way gold's
+#    was measured (min/median/p95/max per 0.01 lot), then set
+#    max_loss_pct_per_trade from it rather than from the placeholder below.
+# 4. Backtest it. [data] below still points at gold's histdata CSVs because
+#    that is all data/raw has. Download EURJPY M1 and re-point it, or every
+#    backtest number this config produces describes gold.
+# 5. Re-check terminal_info().trade_allowed after login. Algo Trading resets on
+#    every account switch.
+
+[data]
+source = "histdata"          # histdata | mt5-csv
+raw_dir = "data/raw"
+# UNVERIFIED: still gold. Backtesting EURJPY needs EURJPY M1 CSVs in data/raw
+# (gitignored, so not in the Windows zip). Live trading does not read this —
+# the live engine pulls bars from the terminal for [live] symbol — so this
+# being wrong blocks backtests, not execution.
+symbol = "XAUUSD"
+timeframe = "M5"
+start = "2024-01-01"
+end = "2026-07-31"
+
+[strategy]
+fractal_left = 2
+fractal_right = 2
+sr_lookback = 60            # bars
+rr_multiple = 1.0           # 1:1 risk-reward
+# 10 points on a 3-decimal quote — same as gold by coincidence, not by design.
+# See checklist item 2 before trusting it.
+sl_buffer = 0.01
+
+[trading]
+lot = 0.01
+# Backtest-only. The LIVE risk gate does NOT use this: broker/base.py sizes off
+# (stop_distance / tick_size) * tick_value, where tick_value is already in
+# account currency — which is exactly what makes a JPY cross safe to size
+# without a conversion step. Left at gold's value because [data] is still gold;
+# it becomes wrong the moment checklist item 4 is done.
+contract_size = 100
+spread_assumption = 0.0
+
+[backtest]
+output_dir = "output"
+
+[live]
+enabled = false          # opt-in for REAL-account execution (SAFE-03) — OFF
+mode = "dry-run"         # dry-run | demo | live — stays dry-run until verified
+magic_number = 77022     # distinct from gold 77020 and bitcoin 77021
+deviation = 20           # max slippage in points for order_send
+poll_interval = 5.0      # seconds between live bar checks
+comment = "eurjpy"
+
+# UNVERIFIED — read the real one from Market Watch (checklist item 1).
+symbol = "EURJPYc"
+
+# On Windows the MetaTrader5 pip package talks to the terminal directly, so
+# there is no container, no Wine and no RPC bridge. "native" states that
+# outright instead of letting "auto" fall back to a bridge that cannot exist
+# on this platform and reporting the failure as a connection error.
+bridge = "native"
+bridge_host = "localhost"
+bridge_port = 8001
+
+replay_bars = 500
+
+[risk]
+# PLACEHOLDER — 0.5% mirrors bitcoin's, chosen because it is the smaller of the
+# two live caps, NOT because EURJPY's stop distribution has been measured. Do
+# checklist item 3 before this figure means anything.
+#
+# What makes the placeholder defensible as a STARTING point: the cap is enforced
+# against the broker's own tick_value, so an EURJPY stop that costs more than
+# 0.5% is skipped and logged (reason="risk_exceeded"), never resized. Being
+# wrong here costs skipped trades, not oversized ones.
+max_loss_pct_per_trade = 0.5
+
+# One slot, not two. The 2-slot result (avgR unchanged, sample doubled) was
+# measured on GOLD; nothing says it transfers to a JPY cross, and this account
+# has no track record to spend on the assumption. Raise it only after EURJPY
+# has its own slot study — and remember the cap and max_concurrent must always
+# move TOGETHER, or you have added leverage rather than sample size.
+#
+# With three bots on three SEPARATE accounts, slots no longer need counting
+# account-wide across bots the way config-btc.toml's comment describes — that
+# warning assumed gold and bitcoin shared one balance. Each account now carries
+# only its own bot.
+max_concurrent = 1
+
+# "percent" sizes the position so the stop costs exactly the cap, which is the
+# only mode in which the account compounds. Still refuses below lot_min rather
+# than rounding up and breaking the cap.
+sizing = "percent"
+
+max_daily_loss_pct = 6.0
+
+# Refuse a setup whose reward:risk has decayed below this before we can act.
+min_rr = 0.5
+
+lot_min = 0.01
+lot_step = 0.01

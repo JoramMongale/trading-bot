@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+
+# Node/web build artifacts
+node_modules/
+web/.next/
+web/node_modules/
+
+# Test tooling
+.pytest_cache/
+
+# Data and output
+data/raw/*.csv
+data/raw/*.txt
+data/processed/
+data/analytics/
+output/
+
+# Build artefacts
+dist/
+dbt/target/
+dbt/logs/

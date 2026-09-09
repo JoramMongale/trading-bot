@@ -1,0 +1,8 @@
+trading_bot:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../data/analytics/trading.duckdb
+      schema: main
+      threads: 4
