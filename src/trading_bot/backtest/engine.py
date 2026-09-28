@@ -26,6 +26,8 @@ from __future__ import annotations
 import math
 from typing import Any, Callable, Optional
 
+import pandas as pd
+
 from trading_bot.strategy.candle_reversal import candle_levels, detect_candle_reversal
 from trading_bot.strategy.filters import atr_below_median, body_confirms, htf_trend
 from trading_bot.strategy.levels import support_resistance
@@ -59,6 +61,8 @@ def run_backtest(
     setup_veto: Optional[Callable[[pd.Series, float, float, float], Optional[str]]] = None,
     variant: str = "breakout",
     setup_override: Optional[pd.Series] = None,
+    sentiment: Optional[pd.Series] = None,
+    sentiment_band: float = 10.0,
 ) -> list[dict[str, Any]]:
     """Run the strategy over ``df`` (OHLC, datetime index) and return trades.
 
@@ -125,6 +129,19 @@ def run_backtest(
     filters run. It exists for falsification: a coin-flip trigger through the
     same engine measures whether an apparent edge is predictive alpha or just
     the engine's fill/slot mechanics. Default None = unchanged behaviour.
+
+    ``sentiment`` (research only) is an OPTIONAL 0-100 Fear & Greed Series
+    aligned to ``df.index`` that gates setups by direction ("trade with
+    sentiment"): a bullish value (``>= 50 + sentiment_band``) permits ONLY
+    longs, a bearish value (``<= 50 - sentiment_band``) permits ONLY shorts,
+    and the neutral band (or a NaN bar, which carries no information) permits
+    both -- fail-open, matching the project's news fail-open convention. The
+    gate applies to "long"/"short"/"both" alike and is a pure mask over
+    ``df["setup"]``: it can only suppress setups, never add them. ``None``
+    (the default) leaves the loop byte-identical. The caller must pass a
+    no-lookahead-shifted, index-aligned Series -- ``news.fear_greed.map_to_bars``
+    does exactly that (``daily.shift(1)`` then forward-fill). Backtest-only by
+    construction: the live engine never calls ``run_backtest``.
     """
     if direction not in ("long", "short", "both"):
         raise ValueError(
@@ -164,6 +181,9 @@ def run_backtest(
             raise ValueError(
                 "direction='both' cannot be combined with setup_override: a "
                 "bare boolean override carries no side")
+
+    if sentiment_band < 0:
+        raise ValueError(f"sentiment_band={sentiment_band} must be >= 0")
 
     df = df.copy()  # pandas 3.0 Copy-on-Write: never mutate the caller's frame
     if variant == "candle_reversal":
@@ -207,6 +227,27 @@ def run_backtest(
         df["setup"] = df["setup"] & htf_trend(df, htf_sma, htf_rule, direction)
     if require_body:
         df["setup"] = df["setup"] & body_confirms(df, direction)
+
+    # Sentiment direction gate (research seam, quick 20260928-btc-fear-greed):
+    # when `sentiment` (a 0-100 Fear & Greed Series aligned to df.index) is
+    # provided, mask setups by the value at that bar -- bullish (>= 50+band)
+    # permits ONLY longs, bearish (<= 50-band) permits ONLY shorts, and the
+    # neutral band permits both. NaN (no information) is fail-open: no mask.
+    if sentiment is not None:
+        if len(sentiment) != len(df):
+            raise ValueError(
+                f"sentiment has {len(sentiment)} entries but the frame has {len(df)} bars")
+        vals = pd.Series(sentiment).reindex(df.index)
+        bull = vals >= 50.0 + sentiment_band
+        bear = vals <= 50.0 - sentiment_band
+        if direction == "both":
+            side = df["setup_dir"]
+        else:
+            side = pd.Series(direction, index=df.index)
+        is_long = side.eq("long")
+        is_short = side.eq("short")
+        allow = (is_long & ~bear) | (is_short & ~bull)
+        df["setup"] = df["setup"] & allow.astype(bool)
 
     # Session filter, applied AFTER the levels are built. Masking the frame
     # instead would tear holes in the swing and lookback windows, so a level
