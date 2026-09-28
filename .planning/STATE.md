@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: JPY-Cross Breakout Investigation
 status: executing
 stopped_at: Phase 5 complete — 4/4 plans, 534-test suite green (2026-09-08); quick task 260909-scalper (2026-09-09)
-last_updated: "2026-09-09T00:00:00.000Z"
-last_activity: 2026-09-09 -- Completed quick task 260909-scalper (both-direction scalper measured, clears no bar)
+last_updated: "2026-09-28T00:00:00.000Z"
+last_activity: 2026-09-28 -- Completed quick task 260928-fng (BTC Fear&Greed sentiment direction filter measured, clears no bar)
 progress:
   total_phases: 3
   completed_phases: 1
@@ -16,7 +16,7 @@ progress:
 
 # Project State: Gold 5m Breakout Bot
 
-**Updated:** 2026-09-09
+**Updated:** 2026-09-28
 
 ## Project Reference
 
@@ -40,7 +40,7 @@ See: .planning/PROJECT.md (updated 2026-09-07 after v1.1 definition)
 Phase: 05
 Plan: 4/4 complete
 Status: Phase 5 complete — milestone v1.1 in progress (Phases 6-7 pending)
-Last activity: 2026-09-09 -- Completed quick task 260909-scalper (both-direction scalper measured, clears no bar)
+Last activity: 2026-09-28 -- Completed quick task 260928-fng (BTC Fear&Greed sentiment direction filter measured, clears no bar)
 
 ## Deferred Items
 
@@ -170,6 +170,7 @@ Items acknowledged and deferred at milestone v1.0 close on 2026-09-07 (full deta
 | 260828-vol | Volatility compression/expansion investigation (research) | 2026-08-28 | complete — FALSIFIED. Hypothesis: entering when volatility first expands out of a Bollinger-bandwidth squeeze captures the start of the move. Pure module (bollinger width, detect_squeezes, 7 tests), driver (next-open entry, 100% coverage). Full-sample best t=−0.76 (nothing positive). Ablation control is the killer: SQUEEZED gold R−0.023/t−0.76 vs PLAIN band-breakout (no squeeze) R+0.042/t+1.96 — the squeeze filter actively SUBTRACTS value on gold; BTC identical either way (t≈0.1). Train/test fails (gold +0.011→−0.106; BTC mirrors −0.043→+0.115 — regime luck). Monthly: no stable edge (gold 2026-05 t=−3.35 against). 4th consecutive candidate falsified. See `.planning/quick/20260828-volatility-compression/SUMMARY.md`. |
 | 260828-htf | HTF-aligned M5 pullback investigation (research, gold account target) | 2026-08-28 | complete — FALSIFIED FOR LIVE (5th candidate). Hypothesis: M5 pullbacks to EMA20 gated by H4 EMA50 trend. Pure module (htf_bias shift-by-1 no-lookahead, detect_pullbacks, 5 tests), driver + battery. GOLD (XAUUSDc, the live account instrument): HTF-gated rr1.0 R+0.013/t+1.04, 100% coverage. Controls: HTF ablation (gated +1.04 vs unfiltered −0.65 — the EMA gate genuinely helps) AND random-bias control (EMA +1.04 vs random seeds −1.05/−1.33/−0.13 — EMA beats coin flips) — the FIRST mechanism in the battery to beat its random control, i.e. NOT lagging bias. BUT the edge is economically negligible: fails OOS (train +1.45 → test −0.24), no stable monthly edge, far below the noise bar. Distinction: fails because the signal is real-but-negligible, not because it's noise/front-loaded. Nothing wired live. See `.planning/quick/20260828-htf-pullback/SUMMARY.md`. |
 | 260909-scalper | Both-direction single-slot M5 gold scalper (backtest measurement) | 2026-09-09 | complete — MEASURED, CLEARS NO BAR (backtest only, nothing live/demo touched). Engine gained `direction="both"` single-slot support (`run_backtest`, additive, default byte-identical, 540-test suite green) + grid driver + falsification battery. On real broker-native XAUUSDc M5 (100k bars): long rr1.0 R+0.0925/t+2.11, short rr1.0 R+0.0009/t+0.02, both rr1.0 R+0.0810/t+1.94 (short leg ~flat +0.0228R — mild dilution, no collapse). 8 scalp configs (tight TP rr<1.0, tp_from_fill, hold 12/36): best full-sample t=2.47 (both rr1.0 hold36) but OOS t=+0.46 (FAIL), ALL four pre-registered exits fail OOS t>2.0; best-of-8 noise P=10.3% (median 1.73), N=39 self-check 2.37 ✓; NOT front-loaded for once (2026 half stronger). Note: engine `tp_from_fill` is rr-agnostic so the two tpffill rows measured one config (search effectively N=7). See `.planning/quick/20260909-gold-both-scalper/SUMMARY.md`. |
+| 260928-fng | BTC Fear&Greed sentiment direction filter (backtest measurement) | 2026-09-28 | complete — MEASURED, CLEARS NO BAR (backtest only, nothing live/demo touched). Added keyless stdlib alternative.me Fear&Greed fetcher (`news/fear_greed.py`, JSON cache, fail-closed) + additive `sentiment`/`sentiment_band` direction-gate seam in `run_backtest` (default `None` byte-identical; bullish→long, bearish→short, neutral/NaN→both; 576-test suite green, 14 new tests). Measured the BTC both-direction book gated by daily F&G sentiment (shift(1) no-lookahead) over 100k broker-native BTCUSDc M5 bars. Controls reproduce STATE.md (long −0.0418, short −0.0055, both −0.0612). The direction filter consistently softens the negative both edge (all 5 gated bands R in [−0.0218, −0.0076], best b15 R−0.0076/t−0.17) and gates exactly as specified (bearish span cut longs 165→44, grew shorts 191→372) — but the residual is still negative, best gated |t|=0.48 is pure-noise (P=99.3% at N=5), all 4 pre-registered OOS configs FAIL t>2.0, and the control is front-loaded. Sentiment filtering is a real direction-correct softening of BTC's losing book, not evidence of tradeable edge. See `.planning/quick/20260928-btc-fear-greed-direction-filter/SUMMARY.md`. |
 
 ## Blockers/Concerns
 
