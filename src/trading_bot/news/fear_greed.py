@@ -105,5 +105,20 @@ def map_to_bars(daily: pd.Series, index: pd.Index) -> pd.Series:
     forward-filled onto the bar index: a bar at time T sees only the most
     recent COMPLETED daily value. The leading bar (before the first shifted
     day) stays NaN, which the engine's gate treats as neutral/fail-open.
+
+    The daily index (tz-aware UTC, second resolution, from unix timestamps) is
+    aligned onto the target index's own timezone and resolution first, so a
+    broker M5 index (typically tz-naive, microsecond resolution) compares
+    cleanly under ``reindex``.
     """
-    return daily.shift(1).reindex(index, method="ffill")
+    shifted = daily.shift(1)
+    if shifted.index.tz is not None and index.tz is None:
+        shifted = shifted.tz_localize(None)
+    elif shifted.index.tz is None and index.tz is not None:
+        shifted = shifted.tz_localize(index.tz)
+    elif shifted.index.tz is not None and index.tz is not None:
+        shifted = shifted.tz_convert(index.tz)
+    shifted = shifted.copy()
+    if shifted.index.dtype != index.dtype:
+        shifted.index = shifted.index.astype(index.dtype)
+    return shifted.reindex(index, method="ffill")
