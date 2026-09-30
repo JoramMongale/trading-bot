@@ -37,13 +37,25 @@ USER_AGENT = "trading-bot/0.1 (+personal research)"
 # this keeps the output well inside (0, 100) in practice.
 GOLD_BULLISH_SCALE = 0.05
 
+# Deterministic period2 (2100-01-01 UTC); Yahoo clamps it to "now". We use
+# explicit period1/period2 instead of ``range=max`` because ``range=max``
+# downsamples a multi-decade index to 3-month granularity (``dataGranularity:
+# "3mo"``), which is useless for a 50/200-day MA regime gate -- the 200-day MA
+# would be all-NaN and the 50-day MA a degenerate single-value fill.
+_CHART_PERIOD2 = 4102444800  # 2100-01-01
+
 
 def _chart_url(symbol: str) -> str:
-    """The Yahoo chart API URL for ``symbol`` (``^TNX`` -> ``%5ETNX``)."""
+    """The Yahoo chart API URL for ``symbol`` (``^TNX`` -> ``%5ETNX``).
+
+    ``period1=0`` fetches from the symbol's first trade date, giving the full
+    daily close history (DXY: 17k+ bars back to 1971; ^TNX: 14k+ bars back to
+    1970) at daily granularity.
+    """
     quoted = urllib.parse.quote(symbol, safe="")
     return (
         "https://query1.finance.yahoo.com/v8/finance/chart/"
-        f"{quoted}?range=max&interval=1d"
+        f"{quoted}?period1=0&period2={_CHART_PERIOD2}&interval=1d"
     )
 
 
