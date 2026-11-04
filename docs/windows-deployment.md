@@ -234,15 +234,28 @@ by relaunching the supervisor every time it correctly gave up.
 ## Operating
 
 ```
+scripts\restart_bots.bat                      :: restart cent + btc (as administrator)
+scripts\restart_bots.bat cent                 :: restart one
 schtasks /Run   /TN trading-bot-cent          :: start one now
-type nul > output\live_cent.stop              :: stop one CLEANLY
 schtasks /Query /TN trading-bot-cent          :: status
 type output\supervise_cent.log                :: supervisor log
 type output\live_cent.log                     :: bot log
 ```
 
-Use the stop-file, not `schtasks /End` on its own: ending the task kills the
-supervisor and leaves the bot process orphaned and still trading.
+**Stopping a bot by hand** takes two steps, as administrator:
+
+```
+type nul > output\live_cent.stop              :: tell the supervisor not to restart it
+set /p P=<output\live_cent.pid
+taskkill /PID %P% /F                          :: stop the bot itself
+```
+
+The stop-file alone does nothing while the bot is running: the supervisor only
+checks it after the bot exits. `restart_bots.bat` does both steps, checks the
+pid really is a running python first, and waits for the task to finish.
+
+Do not use `schtasks /End` on its own: ending the task kills the supervisor and
+leaves the bot process orphaned and still trading.
 
 Windows has no SIGTERM convention, so unlike the bash supervisor — which reads
 exit code 143/130 as a deliberate stop — the batch one cannot tell a kill from a

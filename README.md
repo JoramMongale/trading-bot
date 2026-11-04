@@ -1,8 +1,15 @@
 # trading-bot
 
-A Python bot for a breakout setup on Gold (XAUUSD) 5-minute candles: find
-support/resistance from confirmed swing points, wait for a close above
-resistance, then buy at market with a stop below support and a 1:1 target.
+A Python bot for a breakout setup on 5-minute candles (gold, bitcoin, and
+EUR/JPY in progress): find support/resistance from confirmed swing points,
+wait for a close through a level, then enter at market with a structural stop
+and a fixed reward:risk target.
+
+It trades **both directions**. A close above resistance is a buy; the mirror
+image, a close below support, is a sell. Which side is allowed at any moment
+can be set by a **sentiment** reading — the US dollar for gold, the Crypto
+Fear & Greed index for bitcoin, the VIX for yen crosses. See
+[Sentiment: which side to trade](#sentiment-which-side-to-trade).
 
 Backtester and live bot run the **same** strategy code, so what is tested is
 what trades.
@@ -54,7 +61,20 @@ containerised MT5 terminal — see `docs/macos-demo-setup.md`.
 ### Moving it to the Windows machine
 
 Windows is where live trading is native, so the usual flow is: research on
-macOS/Linux, trade on Windows. Build the transfer zip from the dev machine:
+macOS/Linux, trade on Windows.
+
+**The normal route is git.** GitHub (`JoramMongale/trading-bot`) is the main
+copy. Commit and push from the dev machine, then on Windows:
+
+```bat
+git pull
+scripts\restart_bots.bat
+```
+
+`restart_bots.bat` must be run as administrator — see
+[Restarting the bots on Windows](#restarting-the-bots-on-windows).
+
+**Without git**, build a transfer zip from the dev machine:
 
 ```bash
 ./scripts/make_windows_zip.sh
@@ -85,6 +105,7 @@ Everything lives in `config/config.toml`.
 | `config/config.toml` | standard | gold |
 | `config/config-cent.toml` | **cent (USC)** | gold, `XAUUSDc` |
 | `config/config-btc.toml` | **cent (USC)** | bitcoin, `BTCUSDc` — trades 24/7 |
+| `config/config-eurjpy.toml` | **cent (USC)** | EUR/JPY, `EURJPYc` — dry-run, not live yet |
 
 Select one with `--config`. **If your balance is small, you probably need a cent
 account** — the stop in this strategy is structural, so on a standard account
@@ -101,6 +122,7 @@ the symbol-suffix trap, and why sizing must read `trade_tick_value` and never
 [live]      mode, magic number, how to reach the terminal
 [risk]      the money controls — read this table before trading
 [ai]        optional AI advisor layer (mock by default, off until enabled)
+[sentiment] which side to trade (long / short) from a sentiment reading
 ```
 
 **On Windows set `bridge = "native"`** (or leave `"auto"`, which tries native
@@ -135,6 +157,56 @@ Sizing returns *nothing* rather than rounding up when the answer falls below
 `lot_min`. On a small account that means it declines to trade, which is the
 honest outcome: the stop distance is set by the market, so the smallest
 tradable position can still risk more than the policy allows.
+
+### Sentiment: which side to trade
+
+`[strategy] direction` is the default side: `"long"` or `"both"`. With
+`[sentiment] enabled = true`, the bot reads a daily sentiment number once an
+hour, puts it on a 0-100 scale (above 50 = bullish for this symbol), and
+overrides the side when the reading is clear:
+
+| reading | side traded |
+|---|---|
+| 60 or more (`50 + band`) | **long only** |
+| 40 or less (`50 - band`) | **short only** |
+| in between | `[strategy] direction` |
+| data unavailable or too old | `[strategy] direction` |
+
+| `source` | used for | bullish when | data |
+|---|---|---|---|
+| `dxy` | gold | the US dollar is below its 200-day average | Yahoo `DX-Y.NYB`, daily |
+| `fng` | bitcoin | the Crypto Fear & Greed index shows greed | alternative.me, daily |
+| `vix` | yen crosses (EUR/JPY) | VIX is below its 50-day average (calm, risk-on) | Yahoo `^VIX`, daily |
+
+Current state: **on** for gold (`config-cent.toml`, falls back to `both`) and
+bitcoin (`config-btc.toml`, falls back to `long`); **off** for EUR/JPY.
+
+Keep in mind:
+
+- Neither the DXY nor the Fear & Greed filter passed its backtest bar (see
+  `.planning/quick/20260928-*`). Running them on the real accounts is a live
+  experiment. The VIX source has not been backtested at all.
+- Only **completed** days count: today's unfinished value is ignored, the same
+  as in the backtests.
+- The data is saved under `data/processed/` and re-downloaded once it is older
+  than `cache_max_age_hours` (12). If a download fails, the saved copy is used.
+  If the newest day is older than `max_stale_days`, the bot ignores the reading.
+- Every reading is logged: `event=sentiment_direction` (value, day, side) or
+  `event=sentiment_unavailable` (why). Check with
+  `findstr sentiment_ output\live_cent.log` on Windows or
+  `grep sentiment_ output/live_cent.log` elsewhere.
+- To turn it off, set `enabled = false` and restart that bot.
+
+```toml
+[sentiment]
+enabled = true
+source = "dxy"               # dxy | fng | vix
+band = 10.0                  # neutral zone either side of 50
+window = 200                 # moving-average days (dxy, vix)
+refresh_seconds = 3600.0     # re-read at most once an hour
+cache_max_age_hours = 12.0   # re-download the data once the saved copy is older
+max_stale_days = 5.0         # newest day older than this -> ignore the reading
+```
 
 ---
 
@@ -220,6 +292,30 @@ scripts/web_dashboard.sh stop
 The stdlib fallback `scripts/dashboard.py` (quick task 005) remains available
 for a no-dependency status view. See `web/README.md` for details.
 
+### Restarting the bots on Windows
+
+After a `git pull` or any config change, restart the bots so they load it.
+Right-click `scripts\restart_bots.bat` → **Run as administrator**, or from an
+administrator Command Prompt:
+
+```bat
+scripts\restart_bots.bat              :: cent and btc
+scripts\restart_bots.bat cent         :: just one
+```
+
+For each bot it stops it cleanly (writes `output\live_<tag>.stop` so the
+supervisor exits, then kills the bot process), waits for the
+`trading-bot-<tag>` task to finish, starts the task again, and shows the
+bot's first sentiment reading. It never starts a second copy: a bot that will
+not stop is left alone and reported as FAILED. Open trades are safe while the
+bot is down, because their stop loss and take profit are held by the broker.
+
+It needs administrator rights because the tasks run with highest privileges,
+so a normal prompt gets *Access is denied* when stopping the bot.
+
+The tasks themselves are installed once with `scripts\install_windows_tasks.bat`
+— see [`docs/windows-deployment.md`](docs/windows-deployment.md).
+
 ### Starting and stopping a live bot
 
 **In the foreground** — you watch it, `Ctrl-C` stops it. Start here the first
@@ -292,10 +388,12 @@ need an unattended start or stop.
 > equivalent checks read-only: bridge reachable, `trade_allowed=True`, bars
 > arriving, feed fresh, sizing computed across every stop percentile.
 
-There is deliberately **no launchd/systemd agent** for real-money runs. Nothing
-restarts the bot if it dies, which is the safer default: the position's stop and
-target live with the broker, so it stays protected either way, and an
-unsupervised auto-restart is how one bad configuration becomes many bad trades.
+For unattended real-money runs use the supervisors, not a bare auto-restart:
+`scripts/supervise_live.sh` (macOS) or `scripts\supervise_live.bat` via Task
+Scheduler (Windows). Both run preflight before every start and stop for good
+after 5 failures in 15 minutes, because an unsupervised auto-restart is how one
+bad configuration becomes many bad trades. The position's stop and target live
+with the broker, so it stays protected while the bot is down.
 
 ### Is it OK?
 
