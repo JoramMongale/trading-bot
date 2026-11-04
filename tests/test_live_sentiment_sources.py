@@ -236,3 +236,4 @@ def test_committed_bot_configs_risk_and_accounts():
     assert cent.risk.max_loss_pct_per_trade == 10.0 and cent.risk.sizing == "percent"
     assert (btc.risk.sizing, btc.trading.lot) == ("fixed", 0.01)
     assert btc.live.expected_login == 161700182
+    assert cent.live.expected_login == 161693049

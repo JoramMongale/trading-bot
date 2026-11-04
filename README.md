@@ -315,8 +315,7 @@ for a no-dependency status view. See `web/README.md` for details.
 `[live] expected_login` is the account number a bot must be logged in to.
 With it set, the bot (and its startup check) refuses to run when its terminal
 is logged in to any other account — `terminal_path` alone proves which
-install, not which account. BTC is pinned to 161700182; set the gold one in
-`config-cent.toml`.
+install, not which account. Gold is pinned to 161693049, BTC to 161700182.
 
 ### Alerts and reboots (Windows)
 

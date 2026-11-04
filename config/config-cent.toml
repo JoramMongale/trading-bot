@@ -78,10 +78,9 @@ bridge = "native"
 bridge_host = "localhost"
 bridge_port = 8001
 terminal_path = 'C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe'
-# Account number this bot must be logged in to (title bar of the gold
-# terminal). 0 = not checked. FILL THIS IN: with it set, the bot refuses to
-# trade if the gold terminal is logged in to any other account.
-expected_login = 0
+# Account number this bot must be logged in to. The bot refuses to trade if
+# the gold terminal is logged in to any other account.
+expected_login = 161693049
 
 # WINDOWS ONLY — which terminal INSTALL this bot attaches to.
 #
