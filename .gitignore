@@ -27,3 +27,10 @@ dbt/logs/
 # Stray runtime output
 web/web_start.out
 *.pid
+
+# local whisper transcriber env (heavy ML deps, not part of the bot)
+.venv-whisper/
+output/transcripts/
+
+# downloaded equity research data (re-fetch with scripts/fetch_equities*.py)
+data/equities/
