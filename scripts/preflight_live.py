@@ -52,7 +52,8 @@ def main(argv=None):
                        bridge_host=cfg.live.bridge_host,
                        bridge_port=cfg.live.bridge_port,
                        terminal_path=cfg.live.terminal_path,
-                       terminal_portable=cfg.live.terminal_portable)
+                       terminal_portable=cfg.live.terminal_portable,
+                       expected_login=cfg.live.expected_login)
     try:
         broker.connect()
     except BrokerUnavailableError as exc:

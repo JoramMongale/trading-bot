@@ -214,8 +214,10 @@ class MT5Broker(BrokerClient):
         bridge_port: int = 8001,
         terminal_path: str = "",
         terminal_portable: bool = True,
+        expected_login: int = 0,
     ):
         self._symbol = symbol
+        self._expected_login = int(expected_login or 0)
         self._logger = logger
         self._bridge = bridge
         self._bridge_host = bridge_host
@@ -301,11 +303,30 @@ class MT5Broker(BrokerClient):
         self._assert_expected_terminal(ti)
         if not ti.trade_allowed:
             raise BrokerUnavailableError("trade_allowed=False in terminal settings")
+        self._assert_expected_login(mt5)
         # Pull the configured symbol into MarketWatch so price/order calls work.
         if not mt5.symbol_select(self._symbol, True):
             code, msg = mt5.last_error()
             raise BrokerUnavailableError(
                 f"symbol_select({self._symbol}) failed: {code} {msg}"
+            )
+
+    def _assert_expected_login(self, mt5) -> None:
+        """Fail when the terminal is logged in to a different account.
+
+        terminal_path pins the install; this pins the account inside it. Two
+        accounts logged in to one terminal (or the wrong one saved in it)
+        would otherwise place this config's orders on the other account.
+        """
+        if not self._expected_login:
+            return
+        ai = mt5.account_info()
+        login = getattr(ai, "login", None) if ai is not None else None
+        if login != self._expected_login:
+            raise BrokerUnavailableError(
+                f"terminal is logged in to account {login}, but this config "
+                f"expects {self._expected_login} ([live] expected_login) -- "
+                "log the right account in to this terminal"
             )
 
     def disconnect(self) -> None:

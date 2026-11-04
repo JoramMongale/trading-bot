@@ -294,6 +294,7 @@ def build_broker(cfg, logger=None) -> BrokerClient:
         bridge_port=cfg.live.bridge_port,
         terminal_path=cfg.live.terminal_path,
         terminal_portable=cfg.live.terminal_portable,
+        expected_login=cfg.live.expected_login,
     )
 
 

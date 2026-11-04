@@ -164,7 +164,7 @@ def test_each_source_gets_its_own_cache_file(tmp_path):
 @pytest.mark.parametrize(
     ("path", "enabled", "source"),
     [
-        ("config/config-cent.toml", True, "dxy"),
+        ("config/config-cent.toml", True, "dxy"),  # mode veto_longs, below
         ("config/config-btc.toml", True, "fng"),
         ("config/config-eurjpy.toml", False, "vix"),
     ],
@@ -172,3 +172,67 @@ def test_each_source_gets_its_own_cache_file(tmp_path):
 def test_committed_bot_configs_sentiment(path, enabled, source):
     s = load_config(path).sentiment
     assert (s.enabled, s.source) == (enabled, source)
+
+
+# --- veto_longs: macro headwind (DXY strong AND 10y yield rising) ------------
+
+
+def _two_loaders(monkeypatch, dxy, tnx):
+    def _load(source, cache_path, refresh):
+        return {"dxy": dxy, "tnx": tnx}[source]
+    monkeypatch.setattr(ls, "_load", _load)
+
+
+def _headwind(tmp_path, **kw):
+    for n in ("d.json", "t.json"):
+        (tmp_path / n).write_text("{}")
+    return ls.macro_headwind(dxy_cache_path=str(tmp_path / "d.json"),
+                             tnx_cache_path=str(tmp_path / "t.json"),
+                             window=5, yield_window=5, band=10.0, now=NOW, **kw)
+
+
+STRONG_DXY = _daily([100.0] * 10 + [105.0, 0.0])
+WEAK_DXY = _daily([100.0] * 10 + [95.0, 999.0])
+RISING_TNX = _daily([4.0] * 10 + [4.5, 0.0])
+FALLING_TNX = _daily([4.0] * 10 + [3.5, 99.0])
+
+
+@pytest.mark.parametrize(
+    ("dxy", "tnx", "veto"),
+    [
+        (STRONG_DXY, RISING_TNX, True),
+        (STRONG_DXY, FALLING_TNX, False),
+        (WEAK_DXY, RISING_TNX, False),
+        (WEAK_DXY, FALLING_TNX, False),
+    ],
+)
+def test_veto_needs_both_dxy_strong_and_yield_rising(monkeypatch, tmp_path, dxy, tnx, veto):
+    _two_loaders(monkeypatch, dxy, tnx)
+    v = _headwind(tmp_path)
+    assert v.reason == "ok"
+    assert v.veto_longs is veto
+
+
+def test_veto_tnx_failure_means_no_veto(monkeypatch, tmp_path):
+    def _load(source, cache_path, refresh):
+        if source == "tnx":
+            raise OSError("down")
+        return STRONG_DXY
+    monkeypatch.setattr(ls, "_load", _load)
+    v = _headwind(tmp_path)
+    assert v.veto_longs is False and v.reason.startswith("tnx load_failed")
+
+
+def test_veto_stale_tnx_means_no_veto(monkeypatch, tmp_path):
+    _two_loaders(monkeypatch, STRONG_DXY, _daily([4.0] * 10 + [4.5], end="2026-10-01"))
+    v = _headwind(tmp_path)
+    assert v.veto_longs is False and v.reason == "tnx stale"
+
+
+def test_committed_bot_configs_risk_and_accounts():
+    cent = load_config("config/config-cent.toml")
+    btc = load_config("config/config-btc.toml")
+    assert (cent.strategy.direction, cent.sentiment.mode) == ("long", "veto_longs")
+    assert cent.risk.max_loss_pct_per_trade == 10.0 and cent.risk.sizing == "percent"
+    assert (btc.risk.sizing, btc.trading.lot) == ("fixed", 0.01)
+    assert btc.live.expected_login == 161700182

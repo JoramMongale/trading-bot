@@ -293,3 +293,68 @@ def test_sentiment_resolution_is_cached(tmp_path, monkeypatch):
     assert engine._sentiment_direction() == "long"
     assert engine._sentiment_direction() == "long"
     assert calls["n"] == 1
+
+
+# --- 7. veto_longs mode (gold macro headwind) ---------------------------------
+
+
+def _veto(active, reason="ok"):
+    def _fake(**kw):
+        return live_sentiment.Veto(active, 29.0 if active else 70.0,
+                                   active, "2026-11-03", reason)
+    return _fake
+
+
+def _veto_cfg():
+    return SentimentConfig(enabled=True, mode="veto_longs")
+
+
+def test_veto_active_skips_the_long(tmp_path, monkeypatch):
+    monkeypatch.setattr(live_sentiment, "macro_headwind", _veto(True))
+    engine, _, inner = _engine(tmp_path, f"veto_on_{tmp_path.name}",
+                               direction="long", sentiment=_veto_cfg())
+    placed = _placed(engine, inner, _golden_df(), len(_OPENS))
+    assert placed == []
+    log_text = (tmp_path / f"veto_on_{tmp_path.name}.log").read_text()
+    assert "reason=macro_headwind_long" in log_text
+    assert "event=macro_veto veto_longs=True" in log_text
+
+
+def test_veto_inactive_lets_the_long_fire(tmp_path, monkeypatch):
+    monkeypatch.setattr(live_sentiment, "macro_headwind", _veto(False))
+    engine, _, inner = _engine(tmp_path, f"veto_off_{tmp_path.name}",
+                               direction="long", sentiment=_veto_cfg())
+    placed = _placed(engine, inner, _golden_df(), len(_OPENS))
+    assert [p["side"] for p in placed] == ["long"]
+
+
+def test_veto_mode_never_overrides_direction(tmp_path, monkeypatch):
+    """veto_longs must not turn a long-only bot into a short trader."""
+    monkeypatch.setattr(live_sentiment, "macro_headwind", _veto(True))
+    monkeypatch.setattr(live_sentiment, "resolve", _bullishness(5.0))
+    engine, _, inner = _engine(tmp_path, f"veto_dir_{tmp_path.name}",
+                               direction="long", sentiment=_veto_cfg())
+    placed = _placed(engine, inner, _mirror(_golden_df()), len(_OPENS))
+    assert placed == []
+
+
+def test_veto_unavailable_fails_open(tmp_path, monkeypatch):
+    monkeypatch.setattr(live_sentiment, "macro_headwind",
+                        _veto(False, reason="tnx load_failed: OSError: down"))
+    engine, _, inner = _engine(tmp_path, f"veto_na_{tmp_path.name}",
+                               direction="long", sentiment=_veto_cfg())
+    placed = _placed(engine, inner, _golden_df(), len(_OPENS))
+    assert [p["side"] for p in placed] == ["long"]
+    log_text = (tmp_path / f"veto_na_{tmp_path.name}.log").read_text()
+    assert "event=sentiment_unavailable source=dxy+tnx" in log_text
+
+
+def test_veto_error_fails_open(tmp_path, monkeypatch):
+    def _boom(**kw):
+        raise RuntimeError("yahoo down")
+
+    monkeypatch.setattr(live_sentiment, "macro_headwind", _boom)
+    engine, _, inner = _engine(tmp_path, f"veto_err_{tmp_path.name}",
+                               direction="long", sentiment=_veto_cfg())
+    placed = _placed(engine, inner, _golden_df(), len(_OPENS))
+    assert [p["side"] for p in placed] == ["long"]

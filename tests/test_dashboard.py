@@ -202,12 +202,12 @@ def test_risk_endpoint_shows_both_tags(client):
     payload = _get(client, "/api/risk")
     tags = payload["tags"]
     assert set(tags) == {"cent", "btc"}
-    assert tags["cent"]["risk"]["max_loss_pct_per_trade"] == "20.0"
+    assert tags["cent"]["risk"]["max_loss_pct_per_trade"] == "10.0"
     assert tags["cent"]["strategy_rr_multiple"] == "1.0"
     assert tags["btc"]["risk"]["max_loss_pct_per_trade"] == "10.0"
     assert tags["btc"]["strategy_rr_multiple"] == "2.0"
-    # account-wide: 20 x 1 (cent) + 10 x 2 (btc) = 40.0 vs the 2.0 policy
-    assert payload["account_total"] == 40.0
+    # account-wide: 10 x 1 (cent) + 10 x 2 (btc) = 30.0 vs the 2.0 policy
+    assert payload["account_total"] == 30.0
     assert payload["standing_policy"] == 2.0
 
 

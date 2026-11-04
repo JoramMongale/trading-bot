@@ -367,16 +367,12 @@ def test_dotted_strategy_rr_multiple_edits_only_that_value(bots):
     diffs = [(i, a, b) for i, (a, b) in enumerate(zip(orig_lines, new_lines)) if a != b]
     assert len(diffs) == 1
     (idx, old, new) = diffs[0]
-    assert old == ("rr_multiple = 1.0           # measured both-direction single-slot "
-                   "config (quick 20260909-gold-both-scalper): TP = 1x the stop "
-                   "distance, both sides share the one slot")
-    assert new == ("rr_multiple = 3.0           # measured both-direction single-slot "
-                   "config (quick 20260909-gold-both-scalper): TP = 1x the stop "
-                   "distance, both sides share the one slot")
+    assert old == "rr_multiple = 1.0           # TP = 1x the stop distance"
+    assert new == "rr_multiple = 3.0           # TP = 1x the stop distance"
 
     # [risk] table untouched; comments preserved (incl. the inline one).
-    assert "max_loss_pct_per_trade = 20.0" in edited
-    assert "measured both-direction single-slot config" in edited
+    assert "max_loss_pct_per_trade = 10.0" in edited
+    assert "# TP = 1x the stop distance" in edited
     comment_lines = [l for l in orig_lines if l.strip().startswith("#")]
     for c in comment_lines:
         assert c in new_lines
@@ -384,7 +380,7 @@ def test_dotted_strategy_rr_multiple_edits_only_that_value(bots):
     # The edited copy passes the SAME validator the engine uses.
     cfg = load_config(bots["cent"])
     assert cfg.strategy.rr_multiple == 3.0
-    assert cfg.risk.max_loss_pct_per_trade == 20.0
+    assert cfg.risk.max_loss_pct_per_trade == 10.0
 
 
 @pytest.mark.parametrize("bad", ["0", "-1", "abc"])
@@ -433,7 +429,7 @@ def test_view_prints_strategy_rr_multiple(bots, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "strategy.rr_multiple = 1.0" in out
-    assert "max_loss_pct_per_trade = 20.0" in out
+    assert "max_loss_pct_per_trade = 10.0" in out
 
 
 def test_single_command_can_edit_both_tables(bots):
@@ -484,7 +480,7 @@ def test_aggressive_rr_multiple_warns_and_requires_yes(bots, capsys):
 def test_aggressive_loss_pct_warns_and_requires_yes(bots, capsys):
     """max_loss_pct_per_trade >= 10 warns with the streak/net-edge evidence."""
     before = bots["cent"].read_bytes()
-    rc = tune_risk.main(["--tag", "cent", "--set", "max_loss_pct_per_trade=10"])
+    rc = tune_risk.main(["--tag", "cent", "--set", "max_loss_pct_per_trade=12"])
     assert rc == 2
     assert bots["cent"].read_bytes() == before
     cap = capsys.readouterr()
@@ -492,10 +488,10 @@ def test_aggressive_loss_pct_warns_and_requires_yes(bots, capsys):
     assert "4-loss streak is -35%" in cap.out
     assert "aggressive setting" in cap.err
 
-    rc = tune_risk.main(["--tag", "cent", "--set", "max_loss_pct_per_trade=10",
+    rc = tune_risk.main(["--tag", "cent", "--set", "max_loss_pct_per_trade=12",
                          "--yes", "--no-restart"])
     assert rc == 0
-    assert load_config(bots["cent"]).risk.max_loss_pct_per_trade == 10.0
+    assert load_config(bots["cent"]).risk.max_loss_pct_per_trade == 12.0
 
 
 def test_aggressive_account_wide_total_warns(bots, capsys):

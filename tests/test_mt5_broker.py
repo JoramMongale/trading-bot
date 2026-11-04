@@ -815,3 +815,30 @@ def test_dry_run_pending_and_positions_pass_through():
 
     inner.simulate_position(2000, "XAUUSD", 77001)
     assert [p.ticket for p in dry.positions("XAUUSD", 77001)] == [1000, 2000]
+
+
+# --- expected_login (account check) ------------------------------------------
+
+
+def test_connect_accepts_the_expected_account():
+    MT5Broker("XAUUSD", expected_login=999).connect()
+    assert FakeMT5.call("symbol_select") == ("XAUUSD", True)
+
+
+def test_connect_refuses_another_account():
+    with pytest.raises(BrokerUnavailableError) as excinfo:
+        MT5Broker("XAUUSD", expected_login=161700182).connect()
+    msg = str(excinfo.value)
+    assert "logged in to account 999" in msg and "expects 161700182" in msg
+    assert FakeMT5.calls_to("symbol_select") == []  # refused before touching symbols
+
+
+def test_connect_refuses_when_account_info_unavailable():
+    FakeMT5.account = None
+    with pytest.raises(BrokerUnavailableError, match="logged in to account None"):
+        MT5Broker("XAUUSD", expected_login=999).connect()
+
+
+def test_connect_without_expected_login_skips_the_check():
+    MT5Broker("XAUUSD").connect()
+    assert FakeMT5.calls_to("account_info") == []

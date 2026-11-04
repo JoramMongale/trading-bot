@@ -236,6 +236,9 @@ class LiveEngine:
         # the last resolution; ``_sentiment_dir`` is "long"/"short"/None.
         self._sentiment_dir: str | None = None
         self._sentiment_at: float = 0.0
+        # [sentiment] mode = "veto_longs": cached macro-headwind state.
+        self._veto_longs: bool = False
+        self._veto_at: float = 0.0
 
     def _n_bars(self) -> int:
         """Bars of history to fetch on each poll.
@@ -277,7 +280,7 @@ class LiveEngine:
         sentiment is a direction hint, not a safety device.
         """
         s = getattr(self._cfg, "sentiment", None)
-        if s is None or not s.enabled:
+        if s is None or not s.enabled or getattr(s, "mode", "direction") != "direction":
             return None
         now = time.monotonic()
         if self._sentiment_at and now - self._sentiment_at < s.refresh_seconds:
@@ -324,6 +327,55 @@ class LiveEngine:
         self._sentiment_dir = direction
         self._sentiment_at = now
         return direction
+
+    def _macro_veto_longs(self) -> bool:
+        """``[sentiment] mode = "veto_longs"``: is the macro against gold now?
+
+        True while DXY is strong AND the 10-year yield is rising (see
+        :func:`trading_bot.news.live_sentiment.macro_headwind`). Cached for
+        ``refresh_seconds``; logs ``macro_veto`` on every refresh. Fail-open:
+        unavailable data -> False (longs allowed), logged as
+        ``sentiment_unavailable``.
+        """
+        s = getattr(self._cfg, "sentiment", None)
+        if s is None or not s.enabled or getattr(s, "mode", "direction") != "veto_longs":
+            return False
+        now = time.monotonic()
+        if self._veto_at and now - self._veto_at < s.refresh_seconds:
+            return self._veto_longs
+        try:
+            from trading_bot.news.live_sentiment import macro_headwind
+
+            v = macro_headwind(
+                dxy_cache_path=s.cache_path,
+                tnx_cache_path=s.yield_cache_path,
+                window=s.window,
+                yield_window=s.yield_window,
+                band=s.band,
+                cache_max_age_hours=s.cache_max_age_hours,
+                max_stale_days=s.max_stale_days,
+            )
+            veto = v.veto_longs
+            if v.reason == "ok":
+                log_decision(
+                    self._logger,
+                    "macro_veto",
+                    veto_longs=veto,
+                    dxy_bullishness=(round(v.dxy_bullishness, 2)
+                                     if v.dxy_bullishness is not None else None),
+                    yield_rising=v.yield_rising,
+                    as_of=v.as_of,
+                )
+            else:
+                log_decision(self._logger, "sentiment_unavailable",
+                             source="dxy+tnx", detail=v.reason, as_of=v.as_of)
+        except Exception as exc:  # noqa: BLE001 — fail-open
+            log_decision(self._logger, "sentiment_unavailable", source="dxy+tnx",
+                         detail=f"{type(exc).__name__}: {exc}")
+            veto = False
+        self._veto_longs = veto
+        self._veto_at = now
+        return veto
 
     def poll_once(self) -> dict:
         """Run ONE poll iteration and return the event dict describing it.
@@ -381,6 +433,9 @@ class LiveEngine:
             sent = self._sentiment_direction()
             if sent is not None:
                 direction = sent
+            # veto_longs mode: refresh (and log) the macro state every hour,
+            # not only when a long setup happens to fire.
+            self._macro_veto_longs()
         if direction == "both":
             long_sig = detect_setups(df, direction="long")["setup"]
             short_sig = detect_setups(df, direction="short")["setup"]
@@ -468,6 +523,18 @@ class LiveEngine:
         #    entry. The log gets 2-dp prices and the side; the OrderRequest
         #    keeps full precision.
         side = str(df["setup_dir"].iloc[-1]) if direction == "both" else direction
+        if side == "long" and self._macro_veto_longs():
+            log_decision(
+                self._logger,
+                "setup_skipped",
+                reason="macro_headwind_long",
+                bar=new_bar_time.isoformat(),
+            )
+            return {
+                "event": "setup_skipped",
+                "reason": "macro_headwind_long",
+                "bar": new_bar_time.isoformat(),
+            }
         if side == "short":
             entry = float(df["support"].iloc[-1])
             sl = float(df["resistance"].iloc[-1] + cfg.strategy.sl_buffer)

@@ -27,9 +27,12 @@ end = "2026-07-31"
 fractal_left = 2
 fractal_right = 2
 sr_lookback = 60            # bars
-rr_multiple = 1.0           # measured both-direction single-slot config (quick 20260909-gold-both-scalper): TP = 1x the stop distance, both sides share the one slot
+rr_multiple = 1.0           # TP = 1x the stop distance
 sl_buffer = 0.01            # one point below support
-direction = "both"      # long (default) | both — trade the short swing-S/R mirror in the same single slot (D-2)
+# Longs only (2026-11-04): the gold long leg is the only side that cleared a
+# statistical bar (t=+2.11); the short mirror measured ~0R. Longs are skipped
+# while the macro is against gold -- see [sentiment] mode = "veto_longs".
+direction = "long"      # long (default) | both
 
 [trading]
 lot = 0.01
@@ -75,6 +78,10 @@ bridge = "native"
 bridge_host = "localhost"
 bridge_port = 8001
 terminal_path = 'C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe'
+# Account number this bot must be logged in to (title bar of the gold
+# terminal). 0 = not checked. FILL THIS IN: with it set, the bot refuses to
+# trade if the gold terminal is logged in to any other account.
+expected_login = 0
 
 # WINDOWS ONLY — which terminal INSTALL this bot attaches to.
 #
@@ -98,22 +105,25 @@ terminal_path = 'C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe'
 replay_bars = 500
 
 [sentiment]
-# Sentiment picks the side (gold: US dollar index, DXY). Each hour the bot
-# reads DXY vs its 200-day average: a weak dollar (bullish gold) -> long only,
-# a strong dollar (bearish gold) -> short only, the neutral band (or DXY data
-# unavailable / older than max_stale_days) -> [strategy] direction ("both").
-# ENABLED 2026-11-04 on the owner's explicit decision to test it on this real
-# account. The backtest (STATE quick task 260928-dxy) did NOT pass its
-# out-of-sample check, so this is a live experiment: set enabled = false to
-# go back to plain "both".
+# Gold macro veto (2026-11-04). The bot trades LONGS only ([strategy]
+# direction = "long") and skips them while the macro is against gold: the US
+# dollar (DXY) strong vs its 200-day average AND the US 10-year yield above its
+# 200-day average. This is the one filter that improved the long leg in the
+# backtest (quick 260928-dxy composite, d200 t200 b10). It passed a weaker
+# test only (no out-of-sample check), so this is still a live experiment.
+# Data unavailable or stale -> no veto (longs allowed).
+# set enabled = false to trade every long setup.
 enabled = true
 source = "dxy"
-band = 10.0                     # neutral band around 50 (0-100 bullishness)
+mode = "veto_longs"             # direction | veto_longs
+band = 10.0                     # DXY "strong" = bullishness <= 40
 window = 200                    # DXY trailing-MA window, days
+yield_window = 200              # 10-year yield trailing-MA window, days
 cache_path = "data/processed/dxy.json"
-refresh_seconds = 3600.0        # re-read the signal at most once an hour
-cache_max_age_hours = 12.0      # re-download DXY once the saved copy is older
-max_stale_days = 5.0            # newest DXY day older than this -> no override
+yield_cache_path = "data/processed/tnx.json"
+refresh_seconds = 3600.0        # re-read at most once an hour
+cache_max_age_hours = 12.0      # re-download once the saved copy is older
+max_stale_days = 5.0            # newest day older than this -> no veto
 
 [risk]
 # Hard ceiling on what ONE trade may cost, as a percentage of account balance.
@@ -144,7 +154,10 @@ max_stale_days = 5.0            # newest DXY day older than this -> no override
 #
 # Once the balance clears ~R800, move gold to 0.5% x 2 slots to match BTC and
 # pick up the doubled sample here too.
-max_loss_pct_per_trade = 20.0
+# 2026-11-04: lowered from 20% on the owner's decision. At the median stop
+# 10% sizes ~half of what 20% did; setups whose minimum lot (0.01) would cost
+# more than 10% are skipped.
+max_loss_pct_per_trade = 10.0
 
 # How many positions (open + armed) may exist at once, on this magic number.
 #

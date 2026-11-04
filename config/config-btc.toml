@@ -72,6 +72,9 @@ bridge = "native"
 bridge_host = "localhost"
 bridge_port = 8001
 terminal_path = 'C:\MT5-Gold\terminal64.exe'
+# Account number this bot must be logged in to. The bot refuses to trade if
+# the C:\MT5-Gold terminal is logged in to any other account.
+expected_login = 161700182
 
 # WINDOWS ONLY — which terminal INSTALL this bot attaches to. See the same
 # block in config-cent.toml for why this is required once a second terminal
@@ -161,7 +164,11 @@ max_concurrent = 2
 #               equity and shrinks after a loss. Still refuses when the answer
 #               falls below lot_min, which is the honest outcome on a small
 #               account rather than rounding up and breaking the cap.
-sizing = "percent"
+# 2026-11-04: "fixed" at [trading] lot = 0.01 (the minimum) on the owner's
+# decision -- the BTC breakout lost money in every backtest version, so it runs
+# at the smallest possible size. max_loss_pct_per_trade stays as a ceiling:
+# a setup whose 0.01-lot stop would cost more than that is skipped.
+sizing = "fixed"
 
 # Stop trading for the rest of the day once the day is down this much, measured
 # against the balance at the first placement-check of that day. Counts REALISED

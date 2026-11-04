@@ -164,6 +164,12 @@ class LiveConfig:
     # shared %APPDATA% tree — which is what stops three terminals sharing one
     # accounts.dat and logging each other out.
     terminal_portable: bool = True
+    # The MT5 account number this bot must be logged in to. 0 = not checked.
+    # terminal_path proves WHICH install the bot attached to, not which account
+    # that install is logged in to: log the BTC account into the gold terminal
+    # and every check above still passes. When set, the broker refuses to
+    # connect (and preflight fails) on any other account.
+    expected_login: int = 0
     # Dry-run only: how many bars of history to rewind before replaying, so a
     # dry-run poll loop walks real bars instead of idling on a static frame.
     replay_bars: int = 500
@@ -230,6 +236,7 @@ DEFAULT_LIVE = {
     "bridge_port": 8001,
     "terminal_path": "",
     "terminal_portable": True,
+    "expected_login": 0,
     "replay_bars": 500,
     "fetch_bars": 0,
     "session_hours": [],
@@ -379,6 +386,16 @@ class SentimentConfig:
     refresh_seconds: float = 3600.0   # recompute cadence; the fetch itself is daily
     cache_max_age_hours: float = 12.0  # refetch the daily series once the cache is older
     max_stale_days: float = 5.0       # newest completed day older than this -> no override
+    # "direction": the reading picks the side (bullish -> long only, bearish ->
+    #   short only).
+    # "veto_longs" (source dxy only): never picks a side; [strategy] direction
+    #   applies, but LONG setups are skipped while the macro is against gold --
+    #   DXY strong (bullishness <= 50 - band, `window`-day MA) AND the US 10-year
+    #   yield above its `yield_window`-day MA. The composite gate from quick
+    #   260928-dxy (best: d200 t200 b10).
+    mode: str = "direction"
+    yield_window: int = 200           # ^TNX trailing-MA window, days (veto_longs)
+    yield_cache_path: str = "data/processed/tnx.json"
 
 
 DEFAULT_SENTIMENT = {
@@ -390,6 +407,9 @@ DEFAULT_SENTIMENT = {
     "refresh_seconds": 3600.0,
     "cache_max_age_hours": 12.0,
     "max_stale_days": 5.0,
+    "mode": "direction",
+    "yield_window": 200,
+    "yield_cache_path": "data/processed/tnx.json",
 }
 
 
@@ -658,6 +678,25 @@ def _validate(cfg: Config) -> None:
         raise ValueError(
             f"sentiment.cache_max_age_hours={cfg.sentiment.cache_max_age_hours} "
             "is invalid: must be > 0"
+        )
+    if cfg.sentiment.mode not in ("direction", "veto_longs"):
+        raise ValueError(
+            f"sentiment.mode={cfg.sentiment.mode!r} is invalid: "
+            "must be 'direction' or 'veto_longs'"
+        )
+    if cfg.sentiment.mode == "veto_longs" and cfg.sentiment.source != "dxy":
+        raise ValueError(
+            "sentiment.mode='veto_longs' needs sentiment.source='dxy' "
+            f"(got {cfg.sentiment.source!r})"
+        )
+    if cfg.sentiment.yield_window < 1:
+        raise ValueError(
+            f"sentiment.yield_window={cfg.sentiment.yield_window} is invalid: must be >= 1"
+        )
+    if not isinstance(cfg.live.expected_login, int) or cfg.live.expected_login < 0:
+        raise ValueError(
+            f"live.expected_login={cfg.live.expected_login!r} is invalid: "
+            "must be the account number, or 0 to skip the check"
         )
     if cfg.sentiment.max_stale_days <= 0:
         raise ValueError(
