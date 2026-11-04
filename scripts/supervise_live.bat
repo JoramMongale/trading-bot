@@ -204,6 +204,36 @@ echo !STAMP! %~1
 exit /b 0
 
 :utc
+REM The clock lives in scripts\clock.py, called with plain arguments. Inline
+REM python -c "..." inside for /f breaks: cmd /c strips the outer quotes when a
+REM command holds more than two, and any unquoted ) ends the for clause -- a
+REM syntax error that aborts the whole supervisor. The first version left NOW
+REM empty (crash-loop brake disabled); the first fix aborted at startup.
+REM With exactly two quotes cmd /c keeps them when the path has spaces, and
+REM strips them harmlessly when it has none.
+set "%~1="
+for /f %%T in ('"%PY%" scripts\clock.py utc') do set "%~1=%%T"
+exit /b 0
+
+:now
+set "%~1="
+for /f %%T in ('"%PY%" scripts\clock.py epoch') do set "%~1=%%T"
+exit /b 0
+
+
+REM ===========================================================================
+REM  Subroutines
+REM ===========================================================================
+
+:say
+REM Timestamped to the supervisor log and the console, UTC to match the bash
+REM supervisor and the bot's own structured logs.
+call :utc STAMP
+echo !STAMP! %~1
+>>"%SUPLOG%" echo !STAMP! %~1
+exit /b 0
+
+:utc
 REM The extra outer quotes are required: for /f runs the command through
 REM cmd /c, which strips the first and last quote when there are more than
 REM two. Without them the path quote is broken and python never runs -- which
