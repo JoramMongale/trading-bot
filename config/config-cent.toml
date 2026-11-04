@@ -97,6 +97,22 @@ terminal_path = 'C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe'
 # loop walks real bars one at a time instead of idling on a static frame.
 replay_bars = 500
 
+[sentiment]
+# DXY macro direction signal (gold): when enabled, the live engine resolves the
+# current dollar regime each poll and OVERRIDES [strategy] direction — a weak
+# dollar (bullish gold) -> long only, a strong dollar (bearish gold) -> short
+# only, and the neutral band (or an unavailable signal) -> [strategy] direction
+# unchanged. This is the live half of the backtest sentiment seam; it was
+# measured first (STATE quick task 260928-dxy) and cleared no bar, so it ships
+# DISABLED. Enabling it here trades real money on that measurement — it is a
+# deliberate human opt-in, exactly like [live] enabled and [ai] enabled.
+enabled = false
+source = "dxy"                  # only "dxy" today
+band = 10.0                     # neutral band around 50 (0-100 bullishness)
+window = 200                    # DXY trailing-MA window, days
+cache_path = "data/processed/dxy.json"
+refresh_seconds = 3600.0        # recompute cadence (the fetch itself is daily)
+
 [risk]
 # Hard ceiling on what ONE trade may cost, as a percentage of account balance.
 # Checked before every placement; over-budget setups are skipped and logged

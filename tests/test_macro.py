@@ -20,6 +20,8 @@ from trading_bot.news import macro
 from trading_bot.news.macro import (
     _chart_url,
     _parse_chart,
+    current_dxy_bullishness,
+    dxy_direction,
     is_yield_rising,
     load_dxy,
     to_gold_bullishness,
@@ -173,3 +175,45 @@ def test_fetch_failure_with_no_cache_raises(tmp_path, monkeypatch):
     )
     with pytest.raises(urllib.error.HTTPError):
         load_dxy(cache_path=cache)
+
+
+# --- direction helpers (live sentiment signal) -----------------------------
+
+
+def test_dxy_direction_mapping_and_bounds():
+    assert dxy_direction(90.0, band=10.0) == "long"
+    assert dxy_direction(60.0, band=10.0) == "long"   # 60 >= 50 + 10
+    assert dxy_direction(59.9, band=10.0) is None     # neutral band
+    assert dxy_direction(50.0, band=10.0) is None
+    assert dxy_direction(40.1, band=10.0) is None
+    assert dxy_direction(40.0, band=10.0) == "short"  # 40 <= 50 - 10
+    assert dxy_direction(10.0, band=10.0) == "short"
+    assert dxy_direction(None, band=10.0) is None
+    assert dxy_direction(float("nan"), band=10.0) is None
+
+
+def test_current_dxy_bullishness_returns_latest_regime(monkeypatch):
+    days = pd.date_range("2026-01-01", periods=12, freq="D", tz="UTC")
+    falling = pd.Series(np.linspace(110.0, 100.0, 12), index=days)
+    monkeypatch.setattr(
+        macro, "load_dxy", lambda cache_path=None, refresh=False: falling)
+    val = current_dxy_bullishness(window=5)
+    assert val is not None
+    # falling DXY -> below its own MA -> weak dollar -> bullishness > 50
+    assert val > 50.0
+
+
+def test_current_dxy_bullishness_none_when_window_not_warmed(monkeypatch):
+    days = pd.date_range("2026-01-01", periods=3, freq="D", tz="UTC")
+    short = pd.Series([105.0, 106.0, 104.0], index=days)
+    monkeypatch.setattr(
+        macro, "load_dxy", lambda cache_path=None, refresh=False: short)
+    assert current_dxy_bullishness(window=5) is None
+
+
+def test_current_dxy_bullishness_none_when_unavailable(monkeypatch):
+    def _raise(cache_path=None, refresh=False):
+        raise urllib.error.URLError("boom")
+
+    monkeypatch.setattr(macro, "load_dxy", _raise)
+    assert current_dxy_bullishness() is None

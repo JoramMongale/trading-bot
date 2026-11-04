@@ -26,6 +26,7 @@ logging_utils — never the Windows-only MetaTrader5 package (RESEARCH.md).
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import replace
 
 import pandas as pd
@@ -229,6 +230,12 @@ class LiveEngine:
         # stop-out does. That is the intended reading of "down for the day".
         self._day: object | None = None
         self._day_start_balance: float | None = None
+        # Sentiment direction signal ([sentiment], DXY macro): cached
+        # resolution so a 5s poll loop neither hits Yahoo nor re-reads the JSON
+        # cache on every bar. ``_sentiment_at`` is monotonic-clock seconds of
+        # the last resolution; ``_sentiment_dir`` is "long"/"short"/None.
+        self._sentiment_dir: str | None = None
+        self._sentiment_at: float = 0.0
 
     def _n_bars(self) -> int:
         """Bars of history to fetch on each poll.
@@ -257,6 +264,52 @@ class LiveEngine:
         event; returning ``None`` proceeds to safety/risk/placement unchanged.
         """
         return None
+
+    def _sentiment_direction(self) -> str | None:
+        """Resolve the current sentiment (DXY macro) to a trade direction.
+
+        Returns "long", "short", or None (neutral band / unavailable). None
+        means "no override" — the caller falls back to ``[strategy] direction``.
+        The result is cached for ``[sentiment] refresh_seconds`` so the poll
+        loop does not hit the network on every bar. Fail-open: a fetch/parse
+        error logs and returns None — sentiment is a direction hint, not a
+        safety device, and an outage must not stop the day.
+        """
+        s = getattr(self._cfg, "sentiment", None)
+        if s is None or not s.enabled:
+            return None
+        now = time.monotonic()
+        if now - self._sentiment_at < s.refresh_seconds:
+            return self._sentiment_dir
+        direction = None
+        bullishness = None
+        try:
+            from trading_bot.news.macro import (
+                current_dxy_bullishness,
+                dxy_direction,
+            )
+
+            bullishness = current_dxy_bullishness(
+                cache_path=s.cache_path, window=s.window, refresh=False
+            )
+            direction = dxy_direction(bullishness, band=s.band)
+            log_decision(
+                self._logger,
+                "sentiment_direction",
+                source=s.source,
+                bullishness=round(bullishness, 2) if bullishness is not None else None,
+                direction=direction,
+            )
+        except Exception as exc:  # noqa: BLE001 — fail-open
+            log_decision(
+                self._logger,
+                "sentiment_unavailable",
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+            direction = None
+        self._sentiment_dir = direction
+        self._sentiment_at = now
+        return direction
 
     def poll_once(self) -> dict:
         """Run ONE poll iteration and return the event dict describing it.
@@ -305,6 +358,15 @@ class LiveEngine:
         # "long") and does NOT add a setup_dir column — the AI-context frame
         # is unchanged for every legacy config.
         direction = cfg.strategy.direction
+        # Sentiment direction signal ([sentiment] enabled): the DXY macro
+        # regime OVERRIDES the configured side when it is decisive — weak
+        # dollar -> long only, strong dollar -> short only. A neutral band or
+        # an unavailable signal returns None and leaves the configured
+        # direction untouched (fail-open).
+        if cfg.sentiment.enabled:
+            sent = self._sentiment_direction()
+            if sent is not None:
+                direction = sent
         if direction == "both":
             long_sig = detect_setups(df, direction="long")["setup"]
             short_sig = detect_setups(df, direction="short")["setup"]

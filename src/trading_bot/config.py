@@ -353,6 +353,43 @@ DEFAULT_NEWS = {
 
 
 @dataclass(frozen=True)
+class SentimentConfig:
+    """Direction signal for the live engine (DXY macro regime for gold).
+
+    ``enabled`` is the opt-in: when False the live engine never reads the
+    signal and trades exactly as before (byte-identical). When True, each poll
+    resolves the current DXY macro regime to a trade direction — a weak dollar
+    (bullish gold) -> long only, a strong dollar (bearish gold) -> short only,
+    and a neutral band (or an unavailable signal) -> the configured
+    ``[strategy] direction``. This is the live half of the backtest
+    ``sentiment`` seam; it was measured first (STATE quick task 260928-dxy) and
+    is deliberately conservative — the fallback is the operator's configured
+    direction, never a forced short.
+
+    Distinct from ``[news]`` (the RSS lexicon scorer feeding the AI regime
+    prompt): this is a single deterministic macro number that DIRECTLY selects
+    the trade side, no model involved.
+    """
+
+    enabled: bool = False
+    source: str = "dxy"               # only "dxy" today
+    band: float = 10.0                # neutral band around 50 (0-100 bullishness)
+    window: int = 200                 # DXY trailing-MA window, days
+    cache_path: str = "data/processed/dxy.json"
+    refresh_seconds: float = 3600.0   # recompute cadence; the fetch itself is daily
+
+
+DEFAULT_SENTIMENT = {
+    "enabled": False,
+    "source": "dxy",
+    "band": 10.0,
+    "window": 200,
+    "cache_path": "data/processed/dxy.json",
+    "refresh_seconds": 3600.0,
+}
+
+
+@dataclass(frozen=True)
 class Config:
     data: DataConfig
     strategy: StrategyConfig
@@ -369,6 +406,9 @@ class Config:
     # Defaulted so configs written before the [news] table keep loading; the
     # news pipeline is off (never automatic) unless explicitly enabled.
     news: NewsConfig = NewsConfig()
+    # Defaulted so configs written before the [sentiment] table keep loading;
+    # the live direction signal is off (never automatic) unless enabled.
+    sentiment: SentimentConfig = SentimentConfig()
 
 
 def live_symbol(cfg: Config) -> str:
@@ -590,6 +630,25 @@ def _validate(cfg: Config) -> None:
         raise ValueError(
             f"news.fetch_timeout={cfg.news.fetch_timeout} is invalid: must be > 0"
         )
+    if cfg.sentiment.source not in ("dxy",):
+        raise ValueError(
+            f"sentiment.source={cfg.sentiment.source!r} is invalid: must be 'dxy'"
+        )
+    if cfg.sentiment.band < 0:
+        raise ValueError(
+            f"sentiment.band={cfg.sentiment.band} is invalid: must be >= 0"
+        )
+    if cfg.sentiment.window < 1:
+        raise ValueError(
+            f"sentiment.window={cfg.sentiment.window} is invalid: must be >= 1"
+        )
+    if not cfg.sentiment.cache_path:
+        raise ValueError("sentiment.cache_path must be a non-empty path")
+    if cfg.sentiment.refresh_seconds <= 0:
+        raise ValueError(
+            f"sentiment.refresh_seconds={cfg.sentiment.refresh_seconds} is invalid: "
+            "must be > 0"
+        )
 
 
 def load_config(path: str | Path = "config/config.toml") -> Config:
@@ -619,6 +678,7 @@ def load_config(path: str | Path = "config/config.toml") -> Config:
         risk=RiskConfig(**{**DEFAULT_RISK, **raw.get("risk", {})}),
         ai=AIConfig(**{**DEFAULT_AI, **raw.get("ai", {})}),
         news=NewsConfig(**{**DEFAULT_NEWS, **raw.get("news", {})}),
+        sentiment=SentimentConfig(**{**DEFAULT_SENTIMENT, **raw.get("sentiment", {})}),
     )
     _validate(cfg)
     return cfg

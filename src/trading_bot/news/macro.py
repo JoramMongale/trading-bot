@@ -19,6 +19,7 @@ a silent miss would corrupt the measurement.
 from __future__ import annotations
 
 import json
+import math
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -192,3 +193,46 @@ def is_yield_rising(tnx: pd.Series, window: int) -> pd.Series:
     """
     ma = tnx.rolling(window=window, min_periods=window).mean()
     return (tnx > ma).where(ma.notna())
+
+
+def current_dxy_bullishness(
+    cache_path: str | Path = "data/processed/dxy.json",
+    window: int = 200,
+    refresh: bool = False,
+) -> float | None:
+    """Latest DXY-macro gold-bullishness (0-100), or None when unavailable.
+
+    Loads the daily DXY series (fetch-once + JSON cache), maps it through
+    :func:`to_gold_bullishness`, and returns the last non-NaN value — the
+    regime as it stands at the most recent completed day. Returns None (never
+    a fabricated value) when the series cannot be loaded or the window has not
+    warmed. ``refresh=True`` re-fetches from Yahoo; the default reads the
+    cache with ZERO network, which is what a poll loop wants. A load failure
+    is swallowed here (returns None) because a live direction signal is a
+    hint, not a backtest input — the caller decides its own fallback.
+    """
+    try:
+        dxy = load_dxy(cache_path=cache_path, refresh=refresh)
+    except (urllib.error.URLError, ValueError, OSError):
+        return None
+    bull = to_gold_bullishness(dxy, window).dropna()
+    if bull.empty:
+        return None
+    return float(bull.iloc[-1])
+
+
+def dxy_direction(bullishness: float | None, band: float = 10.0) -> str | None:
+    """Map a 0-100 gold-bullishness to a trade direction.
+
+    ``>= 50 + band`` -> "long"; ``<= 50 - band`` -> "short"; the neutral band
+    (and None/NaN, which carry no information) -> None, meaning "no override —
+    fall back to the configured default". Matches the backtest ``sentiment``
+    seam's direction gate (bullish -> longs only, bearish -> shorts only).
+    """
+    if bullishness is None or not math.isfinite(bullishness):
+        return None
+    if bullishness >= 50.0 + band:
+        return "long"
+    if bullishness <= 50.0 - band:
+        return "short"
+    return None
