@@ -76,7 +76,9 @@ def test_sentiment_table_readable_when_enabled(tmp_path):
 @pytest.mark.parametrize(
     ("override", "bad_key"),
     [
-        ({"source": '"fng"'}, "sentiment.source"),
+        ({"source": '"news"'}, "sentiment.source"),
+        ({"cache_max_age_hours": "0"}, "sentiment.cache_max_age_hours"),
+        ({"max_stale_days": "0"}, "sentiment.max_stale_days"),
         ({"source": '""'}, "sentiment.source"),
         ({"band": "-1.0"}, "sentiment.band"),
         ({"window": "0"}, "sentiment.window"),
@@ -89,11 +91,3 @@ def test_invalid_sentiment_values_raise_naming_key(tmp_path, override, bad_key):
     p = _write_config(tmp_path, **override)
     with pytest.raises(ValueError, match=bad_key):
         load_config(p)
-
-
-def test_live_configs_load_with_sentiment_defaults():
-    """Every committed live config loads with the sentiment table present and
-    disabled by default — enabling it is a deliberate edit, not an accident."""
-    for path in ("config/config-cent.toml", "config/config-btc.toml"):
-        cfg = load_config(path)
-        assert cfg.sentiment.enabled is False

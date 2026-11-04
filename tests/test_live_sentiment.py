@@ -3,7 +3,7 @@
 Pins the [sentiment] seam in the LIVE engine: when enabled, the DXY macro
 regime OVERRIDES [strategy] direction — bullish -> long only, bearish -> short
 only, neutral/unavailable -> the configured direction (fail-open). Tests
-monkeypatch ``news.macro.current_dxy_bullishness`` (no network) and drive the
+monkeypatch ``news.live_sentiment.resolve`` (no network) and drive the
 REAL detection chain through the golden/mirrored/mixed frames from
 test_live_engine_both.py. DryRunBroker is used so neither side starves the
 single slot (nothing actually opens).
@@ -37,7 +37,7 @@ from trading_bot.config import (
 )
 from trading_bot.live.engine import LiveEngine
 from trading_bot.logging_utils import get_logger
-from trading_bot.news import macro
+from trading_bot.news import live_sentiment
 
 # Golden 12-bar 5-minute OHLC (identical to test_live_engine_both.py — copied
 # locally because the tests dir is not a package).
@@ -156,9 +156,12 @@ def _placed(engine, inner, frame, n_bars):
 
 
 def _bullishness(value):
-    """Monkeypatch current_dxy_bullishness to return ``value`` (float or None)."""
-    def _fake(cache_path=None, window=None, refresh=False):
-        return value
+    """Fake live_sentiment.resolve reporting bullishness ``value`` (or None)."""
+    def _fake(source, **kw):
+        if value is None:
+            return live_sentiment.Reading(None, None, None, "no_completed_data")
+        d = live_sentiment.direction_for(value, kw.get("band", 10.0))
+        return live_sentiment.Reading(d, value, "2026-11-03", "ok" if d else "neutral")
     return _fake
 
 
@@ -180,7 +183,7 @@ def test_sentiment_disabled_keeps_config_direction(tmp_path):
 def test_bullish_sentiment_suppresses_the_short_mirror(tmp_path, monkeypatch):
     """A bullish regime flips direction to long: the mirrored (short-setup)
     frame now finds no long breakout and places NOTHING."""
-    monkeypatch.setattr(macro, "current_dxy_bullishness", _bullishness(90.0))
+    monkeypatch.setattr(live_sentiment, "resolve", _bullishness(90.0))
     engine, _, inner = _engine(tmp_path, f"sent_bull_{tmp_path.name}",
                                direction="both",
                                sentiment=SentimentConfig(enabled=True))
@@ -191,7 +194,7 @@ def test_bullish_sentiment_suppresses_the_short_mirror(tmp_path, monkeypatch):
 def test_bullish_sentiment_still_fires_long(tmp_path, monkeypatch):
     """A bullish regime on the golden (long-setup) frame fires the long with
     the golden geometry unchanged."""
-    monkeypatch.setattr(macro, "current_dxy_bullishness", _bullishness(90.0))
+    monkeypatch.setattr(live_sentiment, "resolve", _bullishness(90.0))
     engine, _, inner = _engine(tmp_path, f"sent_bull2_{tmp_path.name}",
                                direction="both",
                                sentiment=SentimentConfig(enabled=True))
@@ -208,7 +211,7 @@ def test_bullish_sentiment_still_fires_long(tmp_path, monkeypatch):
 def test_bearish_sentiment_suppresses_the_long(tmp_path, monkeypatch):
     """A bearish regime flips direction to short: the golden (long-setup)
     frame now finds no short breakout and places NOTHING."""
-    monkeypatch.setattr(macro, "current_dxy_bullishness", _bullishness(10.0))
+    monkeypatch.setattr(live_sentiment, "resolve", _bullishness(10.0))
     engine, _, inner = _engine(tmp_path, f"sent_bear_{tmp_path.name}",
                                direction="both",
                                sentiment=SentimentConfig(enabled=True))
@@ -218,7 +221,7 @@ def test_bearish_sentiment_suppresses_the_long(tmp_path, monkeypatch):
 
 def test_bearish_sentiment_fires_the_short_mirror(tmp_path, monkeypatch):
     """A bearish regime on the mirrored frame fires the short."""
-    monkeypatch.setattr(macro, "current_dxy_bullishness", _bullishness(10.0))
+    monkeypatch.setattr(live_sentiment, "resolve", _bullishness(10.0))
     engine, _, inner = _engine(tmp_path, f"sent_bear2_{tmp_path.name}",
                                direction="both",
                                sentiment=SentimentConfig(enabled=True))
@@ -233,7 +236,7 @@ def test_bearish_sentiment_fires_the_short_mirror(tmp_path, monkeypatch):
 def test_neutral_sentiment_falls_back_to_both(tmp_path, monkeypatch):
     """A neutral regime (50) returns no override, so direction="both" fires
     both sides on the mixed frame."""
-    monkeypatch.setattr(macro, "current_dxy_bullishness", _bullishness(50.0))
+    monkeypatch.setattr(live_sentiment, "resolve", _bullishness(50.0))
     engine, _, inner = _engine(tmp_path, f"sent_neutral_{tmp_path.name}",
                                direction="both",
                                sentiment=SentimentConfig(enabled=True))
@@ -245,9 +248,9 @@ def test_neutral_sentiment_falls_back_to_both(tmp_path, monkeypatch):
 
 
 def test_unavailable_sentiment_fails_open(tmp_path, monkeypatch):
-    """current_dxy_bullishness -> None leaves the configured direction
+    """An unavailable reading leaves the configured direction
     untouched (the golden long still fires under direction="both")."""
-    monkeypatch.setattr(macro, "current_dxy_bullishness", _bullishness(None))
+    monkeypatch.setattr(live_sentiment, "resolve", _bullishness(None))
     engine, _, inner = _engine(tmp_path, f"sent_none_{tmp_path.name}",
                                direction="both",
                                sentiment=SentimentConfig(enabled=True))
@@ -258,10 +261,10 @@ def test_unavailable_sentiment_fails_open(tmp_path, monkeypatch):
 def test_sentiment_fetch_error_fails_open(tmp_path, monkeypatch):
     """A fetch exception logs sentiment_unavailable and falls back — the trade
     still proceeds (sentiment is a hint, not a safety device)."""
-    def _raise(cache_path=None, window=None, refresh=False):
+    def _raise(source, **kw):
         raise RuntimeError("yahoo down")
 
-    monkeypatch.setattr(macro, "current_dxy_bullishness", _raise)
+    monkeypatch.setattr(live_sentiment, "resolve", _raise)
     engine, _, inner = _engine(tmp_path, f"sent_err_{tmp_path.name}",
                                direction="both",
                                sentiment=SentimentConfig(enabled=True))
@@ -275,14 +278,14 @@ def test_sentiment_fetch_error_fails_open(tmp_path, monkeypatch):
 
 
 def test_sentiment_resolution_is_cached(tmp_path, monkeypatch):
-    """Two resolutions within refresh_seconds hit current_dxy_bullishness once."""
+    """Two resolutions within refresh_seconds resolve the source once."""
     calls = {"n": 0}
 
-    def _counting(cache_path=None, window=None, refresh=False):
+    def _counting(source, **kw):
         calls["n"] += 1
-        return 90.0
+        return live_sentiment.Reading("long", 90.0, "2026-11-03", "ok")
 
-    monkeypatch.setattr(macro, "current_dxy_bullishness", _counting)
+    monkeypatch.setattr(live_sentiment, "resolve", _counting)
     engine, _, _ = _engine(tmp_path, f"sent_cache_{tmp_path.name}",
                            direction="long",
                            sentiment=SentimentConfig(enabled=True),

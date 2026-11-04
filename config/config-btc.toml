@@ -84,6 +84,22 @@ terminal_path = 'C:\MT5-Gold\terminal64.exe'
 # loop walks real bars one at a time instead of idling on a static frame.
 replay_bars = 500
 
+[sentiment]
+# Sentiment picks the side (BTC: Crypto Fear & Greed index, alternative.me).
+# Yesterday's value: >= 60 (greed) -> long only, <= 40 (fear) -> short only,
+# 41-59 (or data unavailable / stale) -> [strategy] direction (long).
+# ENABLED 2026-11-04 on the owner's explicit decision to test it on this real
+# account. The backtest (STATE quick task 260928-fng) did NOT clear its bar,
+# so this is a live experiment: set enabled = false to go back to long-only.
+enabled = true
+source = "fng"
+band = 10.0                     # neutral band around 50
+window = 200                    # unused by fng (the index is already 0-100)
+cache_path = "data/processed/fear_greed.json"
+refresh_seconds = 3600.0
+cache_max_age_hours = 12.0
+max_stale_days = 3.0            # F&G publishes every day, weekends included
+
 [risk]
 # Hard ceiling on what ONE trade may cost, as a percentage of account balance.
 # Checked before every placement; over-budget setups are skipped and logged

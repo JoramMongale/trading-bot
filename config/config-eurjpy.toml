@@ -97,6 +97,20 @@ bridge_port = 8001
 
 replay_bars = 500
 
+[sentiment]
+# Sentiment picks the side (JPY crosses: VIX "risk" mood). VIX below its
+# 50-day average (calm, risk-on) -> yen weakens -> long only; VIX above it
+# (fear, risk-off) -> short only; neutral / unavailable -> [strategy] direction.
+# NOT backtested yet, and this bot is not live — keep it off until both change.
+enabled = false
+source = "vix"
+band = 10.0
+window = 50                     # VIX trailing-MA window, days
+cache_path = "data/processed/vix.json"
+refresh_seconds = 3600.0
+cache_max_age_hours = 12.0
+max_stale_days = 5.0
+
 [risk]
 # PLACEHOLDER — 0.5% mirrors bitcoin's, chosen because it is the smaller of the
 # two live caps, NOT because EURJPY's stop distribution has been measured. Do

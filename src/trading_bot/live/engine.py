@@ -266,44 +266,58 @@ class LiveEngine:
         return None
 
     def _sentiment_direction(self) -> str | None:
-        """Resolve the current sentiment (DXY macro) to a trade direction.
+        """Resolve the current sentiment to a trade direction.
 
-        Returns "long", "short", or None (neutral band / unavailable). None
-        means "no override" — the caller falls back to ``[strategy] direction``.
-        The result is cached for ``[sentiment] refresh_seconds`` so the poll
-        loop does not hit the network on every bar. Fail-open: a fetch/parse
-        error logs and returns None — sentiment is a direction hint, not a
-        safety device, and an outage must not stop the day.
+        Source per ``[sentiment] source``: dxy (gold), fng (BTC) or vix (JPY
+        crosses) — see :mod:`trading_bot.news.live_sentiment`. Returns "long",
+        "short", or None (neutral band / unavailable / stale). None means "no
+        override" — the caller falls back to ``[strategy] direction``. Cached
+        for ``[sentiment] refresh_seconds`` so the poll loop does not touch
+        the network on every bar. Fail-open: any error logs and returns None —
+        sentiment is a direction hint, not a safety device.
         """
         s = getattr(self._cfg, "sentiment", None)
         if s is None or not s.enabled:
             return None
         now = time.monotonic()
-        if now - self._sentiment_at < s.refresh_seconds:
+        if self._sentiment_at and now - self._sentiment_at < s.refresh_seconds:
             return self._sentiment_dir
-        direction = None
-        bullishness = None
         try:
-            from trading_bot.news.macro import (
-                current_dxy_bullishness,
-                dxy_direction,
-            )
+            from trading_bot.news.live_sentiment import resolve
 
-            bullishness = current_dxy_bullishness(
-                cache_path=s.cache_path, window=s.window, refresh=False
+            reading = resolve(
+                s.source,
+                cache_path=s.cache_path,
+                window=s.window,
+                band=s.band,
+                cache_max_age_hours=s.cache_max_age_hours,
+                max_stale_days=s.max_stale_days,
             )
-            direction = dxy_direction(bullishness, band=s.band)
-            log_decision(
-                self._logger,
-                "sentiment_direction",
-                source=s.source,
-                bullishness=round(bullishness, 2) if bullishness is not None else None,
-                direction=direction,
-            )
+            direction = reading.direction
+            if reading.reason in ("ok", "neutral"):
+                log_decision(
+                    self._logger,
+                    "sentiment_direction",
+                    source=s.source,
+                    bullishness=(round(reading.bullishness, 2)
+                                 if reading.bullishness is not None else None),
+                    as_of=reading.as_of,
+                    direction=direction,
+                    fallback=self._cfg.strategy.direction if direction is None else None,
+                )
+            else:
+                log_decision(
+                    self._logger,
+                    "sentiment_unavailable",
+                    source=s.source,
+                    detail=reading.reason,
+                    as_of=reading.as_of,
+                )
         except Exception as exc:  # noqa: BLE001 — fail-open
             log_decision(
                 self._logger,
                 "sentiment_unavailable",
+                source=s.source,
                 detail=f"{type(exc).__name__}: {exc}",
             )
             direction = None
@@ -358,11 +372,11 @@ class LiveEngine:
         # "long") and does NOT add a setup_dir column — the AI-context frame
         # is unchanged for every legacy config.
         direction = cfg.strategy.direction
-        # Sentiment direction signal ([sentiment] enabled): the DXY macro
-        # regime OVERRIDES the configured side when it is decisive — weak
-        # dollar -> long only, strong dollar -> short only. A neutral band or
-        # an unavailable signal returns None and leaves the configured
-        # direction untouched (fail-open).
+        # Sentiment direction signal ([sentiment] enabled): the sentiment
+        # source (DXY for gold, Fear & Greed for BTC, VIX for JPY crosses)
+        # OVERRIDES the configured side when it is decisive — bullish -> long
+        # only, bearish -> short only. A neutral band or an unavailable/stale
+        # signal returns None and leaves the configured direction untouched.
         if cfg.sentiment.enabled:
             sent = self._sentiment_direction()
             if sent is not None:

@@ -372,11 +372,13 @@ class SentimentConfig:
     """
 
     enabled: bool = False
-    source: str = "dxy"               # only "dxy" today
+    source: str = "dxy"               # dxy (gold) | fng (BTC) | vix (JPY crosses)
     band: float = 10.0                # neutral band around 50 (0-100 bullishness)
     window: int = 200                 # DXY trailing-MA window, days
     cache_path: str = "data/processed/dxy.json"
     refresh_seconds: float = 3600.0   # recompute cadence; the fetch itself is daily
+    cache_max_age_hours: float = 12.0  # refetch the daily series once the cache is older
+    max_stale_days: float = 5.0       # newest completed day older than this -> no override
 
 
 DEFAULT_SENTIMENT = {
@@ -386,6 +388,8 @@ DEFAULT_SENTIMENT = {
     "window": 200,
     "cache_path": "data/processed/dxy.json",
     "refresh_seconds": 3600.0,
+    "cache_max_age_hours": 12.0,
+    "max_stale_days": 5.0,
 }
 
 
@@ -630,9 +634,10 @@ def _validate(cfg: Config) -> None:
         raise ValueError(
             f"news.fetch_timeout={cfg.news.fetch_timeout} is invalid: must be > 0"
         )
-    if cfg.sentiment.source not in ("dxy",):
+    if cfg.sentiment.source not in ("dxy", "fng", "vix"):
         raise ValueError(
-            f"sentiment.source={cfg.sentiment.source!r} is invalid: must be 'dxy'"
+            f"sentiment.source={cfg.sentiment.source!r} is invalid: "
+            "must be 'dxy', 'fng' or 'vix'"
         )
     if cfg.sentiment.band < 0:
         raise ValueError(
@@ -649,6 +654,30 @@ def _validate(cfg: Config) -> None:
             f"sentiment.refresh_seconds={cfg.sentiment.refresh_seconds} is invalid: "
             "must be > 0"
         )
+    if cfg.sentiment.cache_max_age_hours <= 0:
+        raise ValueError(
+            f"sentiment.cache_max_age_hours={cfg.sentiment.cache_max_age_hours} "
+            "is invalid: must be > 0"
+        )
+    if cfg.sentiment.max_stale_days <= 0:
+        raise ValueError(
+            f"sentiment.max_stale_days={cfg.sentiment.max_stale_days} is invalid: "
+            "must be > 0"
+        )
+
+
+def _sentiment_config(raw: dict) -> SentimentConfig:
+    """Build [sentiment], giving each source its own default cache file.
+
+    Without this, a BTC config with source = "fng" and no cache_path would
+    read and overwrite the DXY cache.
+    """
+    from trading_bot.news.live_sentiment import DEFAULT_CACHE
+
+    merged = {**DEFAULT_SENTIMENT, **raw}
+    if "cache_path" not in raw and merged["source"] in DEFAULT_CACHE:
+        merged["cache_path"] = DEFAULT_CACHE[merged["source"]]
+    return SentimentConfig(**merged)
 
 
 def load_config(path: str | Path = "config/config.toml") -> Config:
@@ -678,7 +707,7 @@ def load_config(path: str | Path = "config/config.toml") -> Config:
         risk=RiskConfig(**{**DEFAULT_RISK, **raw.get("risk", {})}),
         ai=AIConfig(**{**DEFAULT_AI, **raw.get("ai", {})}),
         news=NewsConfig(**{**DEFAULT_NEWS, **raw.get("news", {})}),
-        sentiment=SentimentConfig(**{**DEFAULT_SENTIMENT, **raw.get("sentiment", {})}),
+        sentiment=_sentiment_config(raw.get("sentiment", {})),
     )
     _validate(cfg)
     return cfg
