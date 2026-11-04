@@ -72,7 +72,7 @@ echo [live] terminal_path in every config first -- see docs\windows-deployment.m
 echo.
 echo Helper tasks:
 echo   trading-bot-terminals  at logon: opens the cent + btc MT5 terminals
-echo   trading-bot-watchdog   every 5 min: Telegram alerts ^(config\telegram.toml^)
+echo   trading-bot-watchdog   every 5 min: phone alerts ^(watchdog.py --new-topic, then the ntfy app^)
 echo.
 echo For a reboot to come back on its own, Windows must also AUTO-LOGON to this
 echo user -- see docs\windows-deployment.md, "Surviving a reboot".

@@ -231,10 +231,10 @@ be the wrong layer: the supervisor knows the difference between "died once" and
 "cannot start cleanly", and an outer restarter would defeat the crash-loop brake
 by relaunching the supervisor every time it correctly gave up.
 
-## 8. Telegram alerts (watchdog)
+## 8. Phone alerts (watchdog + ntfy)
 
 `scripts\watchdog.py` runs every 5 minutes (task `trading-bot-watchdog`) and
-messages your phone when:
+pushes to your phone when:
 
 - a bot task is not running, or its startup check is failing (with the reason)
 - the crash-loop brake gave up, or a bot died
@@ -243,23 +243,23 @@ messages your phone when:
   limit hit
 - the sentiment side or the gold veto changed, or its data is unavailable
 
-Problems repeat hourly while they last, and a "back to normal" message follows.
-A daily summary arrives after 06:00 UTC. It never places or changes anything.
+Problems arrive as high-priority notifications, repeat hourly while they last,
+and a "back to normal" message follows. A daily summary arrives after 06:00
+UTC. It never places or changes anything.
 
-Setup, once:
+Setup, once (ntfy is free, no account):
 
-1. In Telegram, message **@BotFather**, send `/newbot`, choose a name. Copy
-   the token it replies with.
-2. Open your new bot, press **Start**, send `hi`.
-3. `copy config\telegram.example.toml config\telegram.toml`, put the token
-   in `bot_token`.
-4. `.venv\Scripts\python scripts\watchdog.py --find-chat <token>` prints
-   your `chat_id`; put it in the file.
-5. `.venv\Scripts\python scripts\watchdog.py --test` — the message should
+1. Install **ntfy** on your phone (App Store / Google Play).
+2. On the bot machine: `.venv\Scripts\python scripts\watchdog.py --new-topic`
+   — it creates `config\ntfy.toml` and prints a private topic name.
+3. In the ntfy app tap **+**, type that topic exactly, **Subscribe**.
+4. `.venv\Scripts\python scripts\watchdog.py --test` — the message should
    arrive.
 
-`config\telegram.toml` is gitignored; never commit it (the repo is public).
-Every alert is also written to `output\watchdog.log`.
+On ntfy.sh anyone who knows a topic can read it, which is why the name is long
+and random: keep it private. `config\ntfy.toml` is gitignored. Every alert is
+also written to `output\watchdog.log`. Telegram still works as an alternative
+(`config\telegram.example.toml`); if both are set up, both get every alert.
 
 ## 9. Surviving a reboot
 

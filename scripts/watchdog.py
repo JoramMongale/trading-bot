@@ -1,13 +1,15 @@
-"""Watch the live bots and send Telegram alerts. Run every 5 minutes.
+"""Watch the live bots and send phone alerts. Run every 5 minutes.
 
     python scripts/watchdog.py              one check (what Task Scheduler runs)
+    python scripts/watchdog.py --new-topic  create config/ntfy.toml, print the topic
     python scripts/watchdog.py --test       send a test message
     python scripts/watchdog.py --summary    send the daily summary now
-    python scripts/watchdog.py --find-chat <bot_token>
-                                            print your chat id (message the bot first)
     python scripts/watchdog.py --dry        print alerts instead of sending them
+    python scripts/watchdog.py --find-chat <bot_token>
+                                            Telegram only: print your chat id
 
-Alerts (Telegram, or printed when config/telegram.toml is missing):
+Alerts go to ntfy (config/ntfy.toml) and/or Telegram (config/telegram.toml);
+with neither configured they are only written to output/watchdog.log:
   - bot task not running, startup check (preflight) failing and why,
     crash-loop brake tripped, bot died
   - no candle check for too long while the market is open (frozen bot/terminal)
@@ -190,10 +192,12 @@ class Alerts:
         if not self.sent:
             return
         body = "\n\n".join(self.sent)
+        # Problems ring louder on the phone than routine news.
+        urgent = any(t.startswith(("🔴", "🛑", "⚠️", "🟠")) for t in self.sent)
         if self.dry:
             print(body)
         else:
-            notify.send(body)
+            notify.send(body, priority="high" if urgent else "default")
 
 
 # --- checks --------------------------------------------------------------------
@@ -416,8 +420,22 @@ def main(argv=None) -> int:
     p.add_argument("--dry", action="store_true", help="print alerts, do not send")
     p.add_argument("--test", action="store_true", help="send a test message")
     p.add_argument("--summary", action="store_true", help="send the daily summary now")
-    p.add_argument("--find-chat", metavar="BOT_TOKEN", help="print chat ids for a token")
+    p.add_argument("--find-chat", metavar="BOT_TOKEN", help="Telegram: print chat ids")
+    p.add_argument("--new-topic", action="store_true",
+                   help="create config/ntfy.toml with a private topic and print it")
     a = p.parse_args(argv)
+
+    if a.new_topic:
+        topic, created = notify.new_topic()
+        print(("Created config\\ntfy.toml." if created else
+               "config\\ntfy.toml already exists -- keeping its topic."))
+        print()
+        print(f"  Your topic:  {topic}")
+        print()
+        print("In the ntfy app: tap +, enter this topic exactly, Subscribe.")
+        print("Keep it private: anyone who knows it can read your alerts.")
+        print("Then run:  .venv\\Scripts\\python scripts\\watchdog.py --test")
+        return 0
 
     if a.find_chat:
         chats = notify.find_chat_ids(a.find_chat)
@@ -432,7 +450,7 @@ def main(argv=None) -> int:
     bots = [BOTS[t.strip()] for t in a.bots.split(",") if t.strip()]
     if a.test:
         ok = notify.send("✅ trading-bot watchdog test message. Alerts will arrive here.")
-        print("sent" if ok else "NOT sent -- check config/telegram.toml")
+        print("sent" if ok else "NOT sent -- run --new-topic first, or check config\\ntfy.toml")
         return 0 if ok else 1
     if a.summary:
         text = summary(bots)

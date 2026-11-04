@@ -37,3 +37,4 @@ data/equities/
 
 # Telegram credentials for scripts/watchdog.py (see config/telegram.example.toml)
 config/telegram.toml
+config/ntfy.toml

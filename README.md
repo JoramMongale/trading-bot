@@ -319,7 +319,7 @@ install, not which account. Gold is pinned to 161693049, BTC to 161700182.
 
 ### Alerts and reboots (Windows)
 
-`scripts\watchdog.py` sends Telegram alerts every 5 minutes: bot down, startup
+`scripts\watchdog.py` sends phone alerts (ntfy, free) every 5 minutes: bot down, startup
 check failing (with the reason), frozen bot, trades opened/closed, sentiment
 changes, plus a daily summary. A reboot brings the terminals and bots back on
 their own once auto-logon is set. Setup for both:
