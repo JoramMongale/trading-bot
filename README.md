@@ -67,9 +67,14 @@ macOS/Linux, trade on Windows.
 copy. Commit and push from the dev machine, then on Windows:
 
 ```bat
+scripts\restart_bots.bat stop
 git pull
-scripts\restart_bots.bat
+scripts\restart_bots.bat start
 ```
+
+Always stop **before** pulling: cmd re-reads a batch file while it runs, so a
+pull that rewrites `supervise_live.bat` under a running supervisor is undefined
+behaviour.
 
 `restart_bots.bat` must be run as administrator — see
 [Restarting the bots on Windows](#restarting-the-bots-on-windows).
@@ -294,14 +299,20 @@ for a no-dependency status view. See `web/README.md` for details.
 
 ### Restarting the bots on Windows
 
-After a `git pull` or any config change, restart the bots so they load it.
+After a config change, or a code update (stop → `git pull` → start), the bots
+need restarting to load it.
 Right-click `scripts\restart_bots.bat` → **Run as administrator**, or from an
 administrator Command Prompt:
 
 ```bat
-scripts\restart_bots.bat              :: cent and btc
-scripts\restart_bots.bat cent         :: just one
+scripts\restart_bots.bat              :: restart cent and btc
+scripts\restart_bots.bat cent         :: restart just one
+scripts\restart_bots.bat stop         :: stop cent and btc
+scripts\restart_bots.bat start        :: start cent and btc
 ```
+
+To update code: `stop`, then `git pull`, then `start`. A plain restart is
+enough for a config change.
 
 For each bot it stops it cleanly (writes `output\live_<tag>.stop` so the
 supervisor exits, then kills the bot process), waits for the

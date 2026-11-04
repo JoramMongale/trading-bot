@@ -236,6 +236,8 @@ by relaunching the supervisor every time it correctly gave up.
 ```
 scripts\restart_bots.bat                      :: restart cent + btc (as administrator)
 scripts\restart_bots.bat cent                 :: restart one
+scripts\restart_bots.bat stop                 :: stop cent + btc -- do this BEFORE git pull
+scripts\restart_bots.bat start                :: start cent + btc after the pull
 schtasks /Run   /TN trading-bot-cent          :: start one now
 schtasks /Query /TN trading-bot-cent          :: status
 type output\supervise_cent.log                :: supervisor log

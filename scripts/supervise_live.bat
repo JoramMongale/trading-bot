@@ -146,6 +146,21 @@ REM Failure accounting. Batch cannot do date arithmetic, so epoch seconds come
 REM from the interpreter that is already installed -- correct across midnight,
 REM month ends and DST, all of which naive %%TIME%% parsing gets wrong.
 call :now NOW
+if not defined NOW (
+    REM Clock unavailable: treat every failure as recent so the brake still
+    REM trips after MAX_FAILURES, rather than never.
+    call :say "WARNING: clock unavailable -- counting every failure as recent"
+    set /a NFAIL+=1
+    if !NFAIL! geq %MAX_FAILURES% (
+        call :say "GIVING UP: !NFAIL! failures and no clock to age them."
+        endlocal
+        exit /b 1
+    )
+    call :say "restarting in !BACKOFF!s (failure !NFAIL!/%MAX_FAILURES%)"
+    timeout /t !BACKOFF! /nobreak >nul
+    call :grow_backoff
+    goto :loop
+)
 set "KEPT="
 set /a NFAIL=0
 for %%S in (!FAILSTAMPS! !NOW!) do (
@@ -189,11 +204,17 @@ echo !STAMP! %~1
 exit /b 0
 
 :utc
-for /f %%T in ('"%PY%" -c "import datetime;print(datetime.datetime.now(datetime.timezone.utc).strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ'))"') do set "%~1=%%T"
+REM The extra outer quotes are required: for /f runs the command through
+REM cmd /c, which strips the first and last quote when there are more than
+REM two. Without them the path quote is broken and python never runs -- which
+REM silently left NOW empty and disabled the crash-loop brake (fixed 2026-11-04).
+set "%~1="
+for /f %%T in ('""%PY%" -c "import datetime;print(datetime.datetime.now(datetime.timezone.utc).strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ'))""') do set "%~1=%%T"
 exit /b 0
 
 :now
-for /f %%T in ('"%PY%" -c "import time;print(int(time.time()))"') do set "%~1=%%T"
+set "%~1="
+for /f %%T in ('""%PY%" -c "import time;print(int(time.time()))""') do set "%~1=%%T"
 exit /b 0
 
 :grow_backoff
