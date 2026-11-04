@@ -2,6 +2,8 @@
 
     python scripts/wait_for_log.py <log> <start_byte> <pattern> <timeout_s>
 
+``pattern`` may hold several alternatives separated by ``|`` (any one matches).
+
 Only lines written after byte ``start_byte`` count, so old lines from an
 earlier run are ignored. Prints every matching new line once at least one has
 appeared (giving the writer a moment to finish the batch), then exits 0.
@@ -22,7 +24,8 @@ def new_matches(path: Path, start: int, pattern: str) -> list[str]:
         size = f.seek(0, 2)
         f.seek(start if start <= size else 0)  # file rotated/truncated -> read it all
         lines = f.read().decode("utf-8", "replace").splitlines()
-    return [line for line in lines if pattern in line]
+    alts = [p for p in pattern.split("|") if p]
+    return [line for line in lines if any(p in line for p in alts)]
 
 
 def main(argv: list[str]) -> int:

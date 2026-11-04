@@ -183,12 +183,25 @@ overrides the side when the reading is clear:
 | `fng` | bitcoin | the Crypto Fear & Greed index shows greed | alternative.me, daily |
 | `vix` | yen crosses (EUR/JPY) | VIX is below its 50-day average (calm, risk-on) | Yahoo `^VIX`, daily |
 
-Current state: **on** for gold (`config-cent.toml`, falls back to `both`) and
-bitcoin (`config-btc.toml`, falls back to `long`); **off** for EUR/JPY.
+**Veto mode (gold).** With `mode = "veto_longs"` the reading never picks a
+side; `[strategy] direction` applies, but long setups are skipped while the
+macro is against gold: the dollar (DXY) strong vs its 200-day average **and**
+the US 10-year yield above its 200-day average. Logged as `event=macro_veto`
+and `setup_skipped reason=macro_headwind_long`.
+
+Current state:
+
+| bot | side | sentiment |
+|---|---|---|
+| gold (`config-cent.toml`) | longs only | `dxy`, `veto_longs` |
+| bitcoin (`config-btc.toml`) | sentiment picks, default long | `fng`, `direction` |
+| EUR/JPY (`config-eurjpy.toml`) | — | `vix`, off |
 
 Keep in mind:
 
-- Neither the DXY nor the Fear & Greed filter passed its backtest bar (see
+- The gold veto is the one filter that improved the long side in the backtest,
+  but it passed a weaker test only (no out-of-sample check).
+- Neither the DXY nor the Fear & Greed direction filter passed its backtest bar (see
   `.planning/quick/20260928-*`). Running them on the real accounts is a live
   experiment. The VIX source has not been backtested at all.
 - Only **completed** days count: today's unfinished value is ignored, the same
@@ -297,6 +310,22 @@ scripts/web_dashboard.sh stop
 The stdlib fallback `scripts/dashboard.py` (quick task 005) remains available
 for a no-dependency status view. See `web/README.md` for details.
 
+### Account check
+
+`[live] expected_login` is the account number a bot must be logged in to.
+With it set, the bot (and its startup check) refuses to run when its terminal
+is logged in to any other account — `terminal_path` alone proves which
+install, not which account. BTC is pinned to 161700182; set the gold one in
+`config-cent.toml`.
+
+### Alerts and reboots (Windows)
+
+`scripts\watchdog.py` sends Telegram alerts every 5 minutes: bot down, startup
+check failing (with the reason), frozen bot, trades opened/closed, sentiment
+changes, plus a daily summary. A reboot brings the terminals and bots back on
+their own once auto-logon is set. Setup for both:
+[`docs/windows-deployment.md`](docs/windows-deployment.md) sections 8 and 9.
+
 ### Restarting the bots on Windows
 
 After a config change, or a code update (stop → `git pull` → start), the bots
@@ -316,8 +345,9 @@ enough for a config change.
 
 For each bot it stops it cleanly (writes `output\live_<tag>.stop` so the
 supervisor exits, then kills the bot process), waits for the
-`trading-bot-<tag>` task to finish, starts the task again, and shows the
-bot's first sentiment reading. It never starts a second copy: a bot that will
+`trading-bot-<tag>` task to finish, starts the task again, waits for the bot
+to really start, and shows its first sentiment reading. If the startup check
+keeps failing it reports **NOT STARTED** with the reason. It never starts a second copy: a bot that will
 not stop is left alone and reported as FAILED. Open trades are safe while the
 bot is down, because their stop loss and take profit are held by the broker.
 

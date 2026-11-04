@@ -31,6 +31,8 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0.."
 set "ROOT=%CD%"
 set "SUP=%ROOT%\scripts\supervise_live.bat"
+REM pythonw = no console window, for the helper tasks below.
+set "PYW=%ROOT%\.venv\Scripts\pythonw.exe"
 
 set "MODE=install"
 set "ONLY="
@@ -51,6 +53,7 @@ if not exist "%SUP%" (
 call :handle cent   config\config-cent.toml   live_cent.log   || goto :fail
 call :handle btc    config\config-btc.toml    live_btc.log    || goto :fail
 call :handle eurjpy config\config-eurjpy.toml live_eurjpy.log || goto :fail
+call :helpers || goto :fail
 
 if /i "%MODE%"=="remove" goto :done
 
@@ -66,6 +69,13 @@ echo   log:         type output\supervise_cent.log
 echo.
 echo Each bot needs its OWN terminal install and its OWN account. Set
 echo [live] terminal_path in every config first -- see docs\windows-deployment.md.
+echo.
+echo Helper tasks:
+echo   trading-bot-terminals  at logon: opens the cent + btc MT5 terminals
+echo   trading-bot-watchdog   every 5 min: Telegram alerts ^(config\telegram.toml^)
+echo.
+echo For a reboot to come back on its own, Windows must also AUTO-LOGON to this
+echo user -- see docs\windows-deployment.md, "Surviving a reboot".
 echo.
 echo EUR/JPY ships DISABLED. Its task is registered so it is ready, but the bot
 echo will refuse to trade until you work the checklist in config-eurjpy.toml.
@@ -109,10 +119,41 @@ if not exist "%ROOT%\%CFG%" (
 
 REM The inner quoting is what schtasks needs: /TR takes ONE string, and the
 REM path to the supervisor contains spaces, so its quotes are doubled.
-schtasks /Create /TN "%TN%" /SC ONLOGON /RL HIGHEST /F /RU "%USERDOMAIN%\%USERNAME%" /TR "\"%SUP%\" \"%CFG%\" \"%LOG%\" \"%TAG%\"" >nul
+REM /DELAY 90s: let trading-bot-terminals open the MT5 terminals first.
+schtasks /Create /TN "%TN%" /SC ONLOGON /DELAY 0001:30 /RL HIGHEST /F /RU "%USERDOMAIN%\%USERNAME%" /TR "\"%SUP%\" \"%CFG%\" \"%LOG%\" \"%TAG%\"" >nul
 if errorlevel 1 (
     echo FAIL: could not register %TN%
     exit /b 1
 )
 echo registered  %TN%  -^>  %CFG%
+exit /b 0
+
+
+REM ===========================================================================
+:helpers
+REM trading-bot-terminals (at logon) and trading-bot-watchdog (every 5 min).
+if defined ONLY exit /b 0
+for %%N in (trading-bot-terminals trading-bot-watchdog) do (
+    if /i "%MODE%"=="remove" (
+        schtasks /Query /TN "%%N" >nul 2>&1
+        if errorlevel 1 (
+            echo absent    %%N
+        ) else (
+            schtasks /Delete /TN "%%N" /F >nul
+            echo removed   %%N
+        )
+    )
+)
+if /i "%MODE%"=="remove" exit /b 0
+
+if not exist "%PYW%" (
+    echo FAIL: missing %PYW% -- run scripts\setup.bat first
+    exit /b 1
+)
+schtasks /Create /TN "trading-bot-terminals" /SC ONLOGON /RL HIGHEST /F /RU "%USERDOMAIN%\%USERNAME%" /TR "\"%PYW%\" \"%ROOT%\scripts\start_terminals.py\"" >nul
+if errorlevel 1 ( echo FAIL: could not register trading-bot-terminals & exit /b 1 )
+echo registered  trading-bot-terminals  -^>  opens the MT5 terminals at logon
+schtasks /Create /TN "trading-bot-watchdog" /SC MINUTE /MO 5 /RL HIGHEST /F /RU "%USERDOMAIN%\%USERNAME%" /TR "\"%PYW%\" \"%ROOT%\scripts\watchdog.py\"" >nul
+if errorlevel 1 ( echo FAIL: could not register trading-bot-watchdog & exit /b 1 )
+echo registered  trading-bot-watchdog   -^>  every 5 minutes
 exit /b 0

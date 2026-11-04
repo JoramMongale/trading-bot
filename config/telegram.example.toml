@@ -1,0 +1,12 @@
+# Copy this file to config/telegram.toml and fill it in. telegram.toml is
+# gitignored: the repo is public, and the token lets anyone post as your bot.
+#
+# 1. In Telegram, message @BotFather, send /newbot, pick a name. It replies
+#    with a token like 123456789:AAE...  -> bot_token below.
+# 2. Open your new bot, press Start, send "hi".
+# 3. On the bot machine run:
+#      .venv\Scripts\python scripts\watchdog.py --find-chat <bot_token>
+#    It prints your chat_id -> chat_id below.
+# 4. Test:  .venv\Scripts\python scripts\watchdog.py --test
+bot_token = ""
+chat_id = ""

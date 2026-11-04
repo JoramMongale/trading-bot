@@ -21,7 +21,9 @@ REM       file alone does nothing while the bot is running -- the supervisor
 REM       only checks it after the bot exits)
 REM    2. wait until scheduled task trading-bot-<tag> is no longer Running
 REM    3. start the task again (preflight runs first, as always)
-REM    4. show the bot's first sentiment reading (long / short / none)
+REM    4. wait for the bot to really start (its live_start line); if the
+REM       startup check keeps failing, report NOT STARTED with the reason
+REM    5. show the first sentiment / gold-veto reading
 REM
 REM  Open trades are safe while the bot is down: their stop loss and take
 REM  profit are held by the broker, not by the bot.
@@ -188,15 +190,24 @@ if errorlevel 1 (
     set "FAILED=!FAILED!%TAG% "
     exit /b 0
 )
-echo started %TN% -- waiting for the first sentiment reading ^(up to 3 min^) ...
+echo started %TN% -- waiting for the bot to come up ^(up to 3 min^) ...
 
-REM -- 4. first sentiment reading ---------------------------------------------
-"%PY%" scripts\wait_for_log.py "%LOG%" !LOGSIZE! sentiment_ 180
+REM -- 4. did it really start? ----------------------------------------------
+REM "Started the task" is not "the bot is trading": the supervisor runs the
+REM startup check first and retries quietly if it fails. Wait for the bot's
+REM own live_start line; without it within 3 minutes, report NOT STARTED.
+"%PY%" scripts\wait_for_log.py "%LOG%" !LOGSIZE! event=live_start 180 >nul
 if errorlevel 1 (
-    echo no sentiment line yet. Normal if [sentiment] enabled = false for this bot.
-    echo Otherwise check the supervisor log -- last lines:
-    if exist "%SUPLOG%" "%PY%" -c "import sys; print(''.join(open(sys.argv[1], encoding='utf-8', errors='replace').readlines()[-6:]))" "%SUPLOG%"
+    echo NOT STARTED: the startup check is failing. Reason from the supervisor log:
+    if exist "%SUPLOG%" "%PY%" -c "import sys; L=[l.rstrip() for l in open(sys.argv[1], encoding='utf-8', errors='replace')][-40:]; F=[l for l in L if '[FAIL]' in l]; print(chr(10).join(F[-3:] or L[-6:]))" "%SUPLOG%"
+    echo Usual fixes: Algo Trading on ^(Ctrl+E^), right account logged in, terminal connected, no pop-ups.
+    echo The supervisor keeps retrying on its own -- once fixed it starts within 5 minutes.
+    set "FAILED=!FAILED!%TAG% "
+    exit /b 0
 )
+echo bot is up. First reading:
+"%PY%" scripts\wait_for_log.py "%LOG%" !LOGSIZE! "sentiment_|macro_veto" 60
+if errorlevel 1 echo   ^(no sentiment reading yet -- normal if [sentiment] enabled = false^)
 exit /b 0
 
 

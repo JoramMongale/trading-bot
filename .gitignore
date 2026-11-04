@@ -34,3 +34,6 @@ output/transcripts/
 
 # downloaded equity research data (re-fetch with scripts/fetch_equities*.py)
 data/equities/
+
+# Telegram credentials for scripts/watchdog.py (see config/telegram.example.toml)
+config/telegram.toml

@@ -231,6 +231,58 @@ be the wrong layer: the supervisor knows the difference between "died once" and
 "cannot start cleanly", and an outer restarter would defeat the crash-loop brake
 by relaunching the supervisor every time it correctly gave up.
 
+## 8. Telegram alerts (watchdog)
+
+`scripts\watchdog.py` runs every 5 minutes (task `trading-bot-watchdog`) and
+messages your phone when:
+
+- a bot task is not running, or its startup check is failing (with the reason)
+- the crash-loop brake gave up, or a bot died
+- no candle check for too long while the market is open (frozen terminal)
+- a trade opened, was rejected, or closed (with profit), or the daily loss
+  limit hit
+- the sentiment side or the gold veto changed, or its data is unavailable
+
+Problems repeat hourly while they last, and a "back to normal" message follows.
+A daily summary arrives after 06:00 UTC. It never places or changes anything.
+
+Setup, once:
+
+1. In Telegram, message **@BotFather**, send `/newbot`, choose a name. Copy
+   the token it replies with.
+2. Open your new bot, press **Start**, send `hi`.
+3. `copy config\telegram.example.toml config\telegram.toml`, put the token
+   in `bot_token`.
+4. `.venv\Scripts\python scripts\watchdog.py --find-chat <token>` prints
+   your `chat_id`; put it in the file.
+5. `.venv\Scripts\python scripts\watchdog.py --test` — the message should
+   arrive.
+
+`config\telegram.toml` is gitignored; never commit it (the repo is public).
+Every alert is also written to `output\watchdog.log`.
+
+## 9. Surviving a reboot
+
+A Windows Update restart or a power cut must not leave the bots off. Four
+things make it come back by itself:
+
+1. **Auto-logon.** The tasks run at logon, so Windows must log in on its own.
+   Use Sysinternals **Autologon** (`autologon.exe`, from Microsoft) — enter the
+   password once; it is stored encrypted. Lock the screen after if you like.
+2. **The tasks** (`scripts\install_windows_tasks.bat`, as administrator):
+   `trading-bot-terminals` opens both MT5 terminals at logon (BTC with
+   `/portable`, gold as a standard install), and the bot tasks start 90 s
+   later so the terminals are up when preflight looks for them.
+3. **Power-on after power loss.** In the BIOS/UEFI set *Restore on AC power
+   loss* (or *AC recovery*) to **Power On**.
+4. **Windows Update.** Settings → Windows Update → Advanced options → set
+   **Active hours** to cover your trading hours (or *Pause updates* while a
+   position is open). Updates still install, but outside those hours.
+
+Algo Trading stays on across a terminal restart as long as the account is not
+switched. If it ever comes back off, the watchdog reports
+`trade_allowed=False`.
+
 ## Operating
 
 ```
