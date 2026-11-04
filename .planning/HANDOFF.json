@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-11-04T20:09:45.104Z",
+  "phase": null,
+  "phase_name": "quick tasks 261104-sent and 261104-safe (live sentiment direction, safety pack, ntfy alerts)",
+  "phase_dir": ".planning/quick",
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "GitHub JoramMongale/trading-bot made the main copy; Mac clone trading-bot-github", "status": "done", "commit": "31b92bf"},
+    {"id": 2, "name": "Live sentiment direction (dxy / fng / vix) picks long or short", "status": "done", "commit": "c775f48"},
+    {"id": 3, "name": "scripts/restart_bots.bat (restart / stop / start)", "status": "done", "commit": "04c4e8d"},
+    {"id": 4, "name": "Supervisor clock fix via scripts/clock.py (crash-loop brake works again)", "status": "done", "commit": "781ad36"},
+    {"id": 5, "name": "Account pin (expected_login), gold macro veto_longs, gold risk 10%, BTC min lot", "status": "done", "commit": "fce0e01"},
+    {"id": 6, "name": "Watchdog + auto-start after reboot + NOT STARTED detection", "status": "done", "commit": "406aef6"},
+    {"id": 7, "name": "Gold bot pinned to account 161693049", "status": "done", "commit": "b68d345"},
+    {"id": 8, "name": "ntfy push alerts (free, no account) replace Telegram as the recommended channel", "status": "done", "commit": "4032e4e"}
+  ],
+  "remaining_tasks": [
+    {"id": 9, "name": "User sets up ntfy on Windows + phone and confirms the test alert arrives", "status": "not_started"},
+    {"id": 10, "name": "User applies reboot settings (docs/windows-deployment.md section 9: Autologon, BIOS AC power-on, Windows Update active hours)", "status": "not_started"},
+    {"id": 11, "name": "Confirm install_windows_tasks.bat was re-run so trading-bot-terminals and trading-bot-watchdog tasks exist", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [
+    {"action": "On Windows: git pull; .venv\\Scripts\\python scripts\\watchdog.py --new-topic; subscribe to the topic in the ntfy phone app; run watchdog.py --test", "context": "Phone alerts. Pull is safe without stopping bots for this change only (no .bat changed in 4032e4e).", "blocking": false},
+    {"action": "Reboot hardening per runbook section 9", "context": "So the bots come back unattended after a power cut or Windows Update", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Real-money accounts, no demo stage", "rationale": "User's explicit choice", "phase": "quick"},
+    {"decision": "Gold: long only, with veto_longs (skip longs when DXY bullishness <= 40 on 200d MA and ^TNX above its 200d MA)", "rationale": "Backtest: gold long leg t=+2.11, shorts ~0R; DXY direction gate failed OOS; veto composite d200 t200 b10 cleared only a weaker no-OOS bar", "phase": "quick"},
+    {"decision": "BTC: fng sentiment direction, fixed 0.01 lot", "rationale": "BTC breakout negative in every backtest variant, so minimum exposure", "phase": "quick"},
+    {"decision": "Gold risk 10% per trade", "rationale": "User choice", "phase": "quick"},
+    {"decision": "ntfy over Telegram", "rationale": "User believed Telegram costs money; ntfy is free with no account", "phase": "quick"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Ask the user whether ntfy test alert arrived on the phone; if not, debug with watchdog.py --test output and output\\watchdog.log on Windows.",
+  "context_notes": "Live state at pause: both bots running on Windows. Gold (cent, 161693049) macro_veto veto_longs=True dxy_bullishness=29.14 yield_rising=True, so no gold trades until macro flips. BTC (161700182) sentiment_direction fng 26 -> short. Suite 667 passed, 2 skipped."
+}
