@@ -29,8 +29,26 @@ risk per trade, the backtest's worst run of 7 losses is about a -52% drawdown.
 
 BTC reference: short rr1.0, win 54.9%, avg -0.006R (no edge found).
 
+## EUR/JPY result (run on Windows 2026-11-10, user-pasted)
+
+```
+bars=99,999  2025-07-08 12:10 -> 2026-11-10 07:00  (489 days), EURJPYc, account USC
+spread: median 24 points = 0.024 price; median stop 0.407 -> spread is 5.9% of a stop
+row                       n   win%    avgR      t    PF  1st half  2nd half  maxDD streak
+1 long  rr1.0           351   57.0  +0.009  +0.17  1.02    +0.035    -0.019  19.3R      5
+2 short rr1.0           411   50.9  -0.133  -2.97  0.74    -0.118    -0.148  65.6R      8
+3 both  rr1.0           352   55.1  -0.016  -0.32  0.97    -0.071    +0.045  29.3R      6
+4 both  rr1.0 + VIX b10 367   51.5  -0.099  -2.03  0.80    -0.079    -0.121  37.6R      9
+```
+
+**Verdict: EUR/JPY fails. config-eurjpy.toml stays disabled.** Spread costs
+~0.06R per trade here (vs ~0.005R on gold), which on its own wipes out a 1:1
+breakout's edge. The short leg is clearly negative, but it must NOT be flipped
+into a "fade": that rule was not pre-registered, and inverting it pays the
+spread again. The VIX direction filter made it worse, which matches the
+carry-unwind research (261106-carry).
+
 ## Status
 
-Waiting for the user to run `scripts\eurjpy_check.bat` on Windows and paste
-`output\eurjpy_backtest.txt`. No live config or bot code changed: only scripts/
+EUR/JPY closed. No live config or bot code changed: only scripts/
 and tests. Suite 680 passed, 2 skipped.
