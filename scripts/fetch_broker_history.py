@@ -22,6 +22,8 @@ finds first, which would silently fetch the WRONG account's data.
 """
 
 import argparse
+import json
+from pathlib import Path
 
 import pandas as pd
 
@@ -72,8 +74,34 @@ def _page(mt5, symbol, anchor, chunk):
     return raw
 
 
-def fetch(cfg, symbol: str, pages: int, chunk: int = 50_000) -> pd.DataFrame:
-    """Page back through ``symbol`` M5 history on the config's terminal."""
+def spec_from_terminal(mt5, symbol: str, spreads: pd.Series) -> dict:
+    """The spec sidecar the backtest reads (data/loader.py load_instrument_spec):
+    broker symbol facts plus the median bar spread, in points."""
+    info = mt5.symbol_info(symbol)
+    if info is None:
+        raise RuntimeError(f"symbol_info({symbol}) returned None: {mt5.last_error()}")
+    acct = mt5.account_info()
+    spreads = pd.to_numeric(spreads, errors="coerce").dropna()
+    spreads = spreads[spreads > 0]
+    return {
+        "symbol": info.name,
+        "digits": int(info.digits),
+        "point": float(info.point),
+        "trade_tick_size": float(info.trade_tick_size),
+        "trade_tick_value": float(info.trade_tick_value),
+        "trade_contract_size": float(info.trade_contract_size),
+        "volume_min": float(info.volume_min),
+        "volume_step": float(info.volume_step),
+        "spread_points_median": float(spreads.median()) if len(spreads) else float(info.spread),
+        "account_currency": getattr(acct, "currency", "") if acct is not None else "",
+    }
+
+
+def fetch(cfg, symbol: str, pages: int, chunk: int = 50_000,
+          spec_path: str | None = None) -> pd.DataFrame:
+    """Page back through ``symbol`` M5 history on the config's terminal.
+
+    With ``spec_path``, also writes the spec sidecar JSON there."""
     from trading_bot.broker.base import BrokerUnavailableError
 
     mt5 = _init_mt5(cfg)
@@ -100,6 +128,11 @@ def fetch(cfg, symbol: str, pages: int, chunk: int = 50_000) -> pd.DataFrame:
             anchor = oldest - pd.Timedelta(minutes=5)
             if len(df) < chunk:
                 break
+        if spec_path and frames:
+            spreads = pd.concat(frames).get("spread", pd.Series(dtype=float))
+            spec = spec_from_terminal(mt5, symbol, spreads)
+            Path(spec_path).write_text(json.dumps(spec, indent=2), encoding="utf-8")
+            print(f"  spec: {spec}")
     finally:
         try:
             mt5.shutdown()
@@ -128,6 +161,9 @@ def main() -> int:
     ap.add_argument("--out", default=None,
                     help="output CSV path (default: data/processed/<SYMBOL>_M5_broker.csv)")
     ap.add_argument("--pages", type=int, default=8)
+    ap.add_argument("--spec", action="store_true",
+                    help="also write <out>.spec.json (symbol facts + median spread) "
+                         "for the backtest's [data] spec_file")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -138,13 +174,17 @@ def main() -> int:
     out = args.out or f"data/processed/{symbol}_M5_broker.csv"
     terminal = cfg.live.terminal_path or f"{cfg.live.bridge_host}:{cfg.live.bridge_port}"
     print(f"fetching {symbol} M5 via {terminal}")
-    df = fetch(cfg, symbol, args.pages)
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    spec_path = str(Path(out).with_suffix(".spec.json")) if args.spec else None
+    df = fetch(cfg, symbol, args.pages, spec_path=spec_path)
     if df.empty:
         print("no bars fetched — is the terminal logged in and the symbol listed?",
               file=__import__("sys").stderr)
         return 1
     df.to_csv(out)
     print(f"\nsaved {len(df):,} bars -> {out}")
+    if spec_path:
+        print(f"saved spec -> {spec_path}")
     print(f"span  {df.index[0]} -> {df.index[-1]} "
           f"({(df.index[-1] - df.index[0]).days} days)")
     return 0

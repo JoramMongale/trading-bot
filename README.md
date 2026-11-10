@@ -325,6 +325,33 @@ changes, plus a daily summary. A reboot brings the terminals and bots back on
 their own once auto-logon is set. Setup for both:
 [`docs/windows-deployment.md`](docs/windows-deployment.md) sections 8 and 9.
 
+### Scorecard: is it safe to raise risk?
+
+The daily summary ends with a scorecard that compares the live closed trades
+(since 2026-11-04) with the backtest, per market: win rate, average R, worst
+drop and worst losing run. Print it any time:
+
+```
+.venv\Scripts\python scripts\scorecard.py
+```
+
+It says "too early" until 30 trades have closed. It warns at once if the worst
+drop or losing run is already worse than anything the backtest saw. Only after
+30 trades with a positive average and no warning does it say a small risk step-up
+can be considered.
+
+### Testing a new market (EUR/JPY)
+
+```
+scripts\eurjpy_check.bat
+```
+
+Downloads EUR/JPY M5 history and the broker's symbol facts from the gold
+terminal (`fetch_broker_history.py --spec`), then runs `scripts/backtest_market.py`:
+the live strategy, net of spread, long / short / both / both+VIX. Result in
+`output\eurjpy_backtest.txt`. Read-only, safe while the bots trade. A market goes
+live only if a row passes (t >= 2 and positive in both halves of the period).
+
 ### Restarting the bots on Windows
 
 After a config change, or a code update (stop → `git pull` → start), the bots

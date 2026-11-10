@@ -144,3 +144,11 @@ def test_gold_market_hours(when, is_open):
 def test_kv_parses_structured_lines():
     d = wd.kv("2026 level=INFO event=order_placed side=short entry=4000.5")
     assert d["event"] == "order_placed" and d["side"] == "short" and d["entry"] == "4000.5"
+
+
+def test_daily_summary_includes_scorecard(out):
+    _append(out / "closes.log",
+            "2026-11-05 12:00:00 level=INFO event=trade_closed ticket=7 symbol=XAUUSDc "
+            "how=tp entry=1 exit=2 volume=0.01 profit=+24.30 r=+1.00")
+    text = wd.summary([wd.BOTS["cent"], wd.BOTS["btc"]])
+    assert "📊 Scorecard" in text and "gold: 1 trades" in text

@@ -4,6 +4,7 @@
     python scripts/watchdog.py --new-topic  create config/ntfy.toml, print the topic
     python scripts/watchdog.py --test       send a test message
     python scripts/watchdog.py --summary    send the daily summary now
+    python scripts/watchdog.py --scorecard  print live-vs-backtest results
     python scripts/watchdog.py --dry        print alerts instead of sending them
     python scripts/watchdog.py --find-chat <bot_token>
                                             Telegram only: print your chat id
@@ -15,7 +16,8 @@ with neither configured they are only written to output/watchdog.log:
   - no candle check for too long while the market is open (frozen bot/terminal)
   - trade opened, rejected, closed (with profit), daily loss limit hit
   - sentiment side or gold veto changed, sentiment data unavailable
-  - a daily summary, so silence never has to mean "probably fine"
+  - a daily summary, so silence never has to mean "probably fine", with the
+    live-vs-backtest scorecard (scripts/scorecard.py)
 
 Down-type alerts repeat every hour while the problem lasts, and a "back to
 normal" message follows when it clears. State lives in
@@ -39,7 +41,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
+import scorecard  # noqa: E402
 from trading_bot import notify  # noqa: E402
 
 OUTPUT = ROOT / "output"
@@ -358,6 +362,11 @@ def summary(bots: list[Bot]) -> str:
                 except ValueError:
                     pass
         lines.append(f"• closed in 24h: {n} trade(s), profit {total:+.2f} (account currency)")
+    try:
+        lines.append("")
+        lines.append(scorecard.scorecard(scorecard.read_closes(CLOSES_LOG)))
+    except Exception as exc:  # noqa: BLE001 -- the summary must still go out
+        lines.append(f"(scorecard unavailable: {type(exc).__name__}: {exc})")
     return "\n".join(lines)
 
 
@@ -420,6 +429,8 @@ def main(argv=None) -> int:
     p.add_argument("--dry", action="store_true", help="print alerts, do not send")
     p.add_argument("--test", action="store_true", help="send a test message")
     p.add_argument("--summary", action="store_true", help="send the daily summary now")
+    p.add_argument("--scorecard", action="store_true",
+                   help="print the live-vs-backtest scorecard and exit")
     p.add_argument("--find-chat", metavar="BOT_TOKEN", help="Telegram: print chat ids")
     p.add_argument("--new-topic", action="store_true",
                    help="create config/ntfy.toml with a private topic and print it")
@@ -435,6 +446,10 @@ def main(argv=None) -> int:
         print("In the ntfy app: tap +, enter this topic exactly, Subscribe.")
         print("Keep it private: anyone who knows it can read your alerts.")
         print("Then run:  .venv\\Scripts\\python scripts\\watchdog.py --test")
+        return 0
+
+    if a.scorecard:
+        print(scorecard.scorecard(scorecard.read_closes(CLOSES_LOG)))
         return 0
 
     if a.find_chat:
