@@ -152,7 +152,10 @@ max_loss_pct_per_trade = 10.0
 #
 # This MUST match the max_concurrent the backtest was run at, or every statistic
 # that backtest produced understates live exposure.
-max_concurrent = 2
+# 2026-11-10: 2 -> 1 (owner decision). No BTC version was profitable in the
+# backtests, so the doubled sample is not worth doubled exposure; the two
+# trades also tended to come from the same move and lose together.
+max_concurrent = 1
 
 # How the position is sized.
 #   "fixed"   - always trade [trading] lot, and BLOCK when that risks more than

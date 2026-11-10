@@ -233,7 +233,8 @@ def test_committed_bot_configs_risk_and_accounts():
     cent = load_config("config/config-cent.toml")
     btc = load_config("config/config-btc.toml")
     assert (cent.strategy.direction, cent.sentiment.mode) == ("long", "veto_longs")
-    assert cent.risk.max_loss_pct_per_trade == 10.0 and cent.risk.sizing == "percent"
+    assert cent.risk.max_loss_pct_per_trade == 5.0 and cent.risk.sizing == "percent"
     assert (btc.risk.sizing, btc.trading.lot) == ("fixed", 0.01)
+    assert (cent.risk.max_concurrent, btc.risk.max_concurrent) == (1, 1)
     assert btc.live.expected_login == 161700182
     assert cent.live.expected_login == 161693049

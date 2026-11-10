@@ -156,7 +156,12 @@ max_stale_days = 5.0            # newest day older than this -> no veto
 # 2026-11-04: lowered from 20% on the owner's decision. At the median stop
 # 10% sizes ~half of what 20% did; setups whose minimum lot (0.01) would cost
 # more than 10% are skipped.
-max_loss_pct_per_trade = 10.0
+# 2026-11-10: 10% -> 5% (owner decision). Net of spread the gold long book is
+# t=+1.94, below the new-market bar, and the backtest's worst run of 7 losses
+# would cost ~52% at 10% (~30% at 5%). Raise again only when
+# scripts/scorecard.py says "on track". Min lot still fits: the p95 stop
+# (~60 USC at 0.01 lot) is within 5% of any balance above ~1,200 USC.
+max_loss_pct_per_trade = 5.0
 
 # How many positions (open + armed) may exist at once, on this magic number.
 #

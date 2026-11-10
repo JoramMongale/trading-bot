@@ -332,12 +332,12 @@ def test_e2e_set_on_copies_passes_real_validator(bots):
     edited = bots["btc"].read_text()
     assert "max_loss_pct_per_trade = 0.4" in edited
     assert "# The per-trade cap and max_concurrent must always move TOGETHER." in edited
-    assert "max_concurrent = 2" in edited
+    assert "max_concurrent = 1" in edited
 
     # The edited copy passes the SAME validator the engine uses.
     cfg = load_config(bots["btc"])
     assert cfg.risk.max_loss_pct_per_trade == 0.4
-    assert cfg.risk.max_concurrent == 2
+    assert cfg.risk.max_concurrent == 1
 
     # The other bot's copy is untouched.
     cent_text = bots["cent"].read_text()
@@ -371,7 +371,7 @@ def test_dotted_strategy_rr_multiple_edits_only_that_value(bots):
     assert new == "rr_multiple = 3.0           # TP = 1x the stop distance"
 
     # [risk] table untouched; comments preserved (incl. the inline one).
-    assert "max_loss_pct_per_trade = 10.0" in edited
+    assert "max_loss_pct_per_trade = 5.0" in edited
     assert "# TP = 1x the stop distance" in edited
     comment_lines = [l for l in orig_lines if l.strip().startswith("#")]
     for c in comment_lines:
@@ -380,7 +380,7 @@ def test_dotted_strategy_rr_multiple_edits_only_that_value(bots):
     # The edited copy passes the SAME validator the engine uses.
     cfg = load_config(bots["cent"])
     assert cfg.strategy.rr_multiple == 3.0
-    assert cfg.risk.max_loss_pct_per_trade == 10.0
+    assert cfg.risk.max_loss_pct_per_trade == 5.0
 
 
 @pytest.mark.parametrize("bad", ["0", "-1", "abc"])
@@ -429,7 +429,7 @@ def test_view_prints_strategy_rr_multiple(bots, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "strategy.rr_multiple = 1.0" in out
-    assert "max_loss_pct_per_trade = 10.0" in out
+    assert "max_loss_pct_per_trade = 5.0" in out
 
 
 def test_single_command_can_edit_both_tables(bots):
